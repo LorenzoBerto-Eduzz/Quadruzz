@@ -1,28 +1,38 @@
-'use client';
+/* oxlint-disable next/no-html-link-for-pages */
+import { ArrowRight, Orbit } from 'lucide-react';
+import { chatGPTSignInPath, getChatGPTUser } from './chatgpt-auth';
 
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
+export const dynamic = 'force-dynamic';
 
-export default function Home() {
-  const [clicked, setClicked] = useState(false);
+export default async function Home() {
+  const user = await getChatGPTUser();
 
   return (
-    <main className="grid min-h-screen place-items-center px-6">
-      <section className="w-full max-w-md text-center">
-        <p className="mb-3 font-mono text-xs uppercase tracking-[0.24em] text-muted-foreground">
-          Test website
+    <main className="entrance-shell">
+      <div className="ambient ambient-one" />
+      <div className="ambient ambient-two" />
+      <section className="entrance-card" aria-labelledby="site-title">
+        <div className="brand-mark" aria-hidden="true"><Orbit size={26} strokeWidth={1.6} /></div>
+        <p className="eyebrow">Private team space</p>
+        <h1 id="site-title">Cross-Quadruzz</h1>
+        <p className="entrance-copy">
+          {user
+            ? 'Your ChatGPT identity is confirmed. Continue to request access to the workspace.'
+            : 'Sign in with ChatGPT to request access to the workspace.'}
         </p>
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Hello, world.</h1>
-        <p className="mx-auto mt-4 max-w-sm text-base leading-7 text-muted-foreground">
-          This is the simplest possible website. If you can see this, it works.
-        </p>
-        <Button className="mt-8 h-11 rounded-full px-6 text-base" onClick={() => setClicked(true)}>
-          Test the button
-        </Button>
-        <p className="mt-4 min-h-6 text-sm font-medium text-primary" aria-live="polite">
-          {clicked ? 'It works ✓' : ''}
-        </p>
+        {user ? (
+          <a className="primary-action" href="/workspace">
+            Continue <ArrowRight size={18} aria-hidden="true" />
+          </a>
+        ) : (
+          // SIWC must use a plain top-level browser navigation.
+          <a className="primary-action" href={chatGPTSignInPath('/workspace')} target="_top">
+            Sign in with ChatGPT <ArrowRight size={18} aria-hidden="true" />
+          </a>
+        )}
+        <p className="privacy-note">Workspace details stay private until access is approved.</p>
       </section>
     </main>
   );
 }
+
