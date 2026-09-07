@@ -4,7 +4,7 @@ export type AccessState = 'not_requested' | 'pending' | 'rejected' | 'onboarding
 export type PublicMember = {
   userId: string;
   displayName: string;
-  role: Role;
+  role?: Role;
   joinOrder: number;
   online: boolean;
   imageUrl: string;

@@ -32,7 +32,8 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
 
   const rows = (await db.prepare("SELECT user_id,email,role,status,join_order,display_name,profile_image_key,last_seen_at FROM members WHERE status='approved' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL ORDER BY join_order ASC").all<MemberRow>()).results;
   const now = Date.now();
-  const members: PublicMember[] = rows.map((row) => ({ userId: row.user_id, displayName: row.display_name!, role: row.role, joinOrder: row.join_order, online: row.last_seen_at !== null && now - row.last_seen_at <= OFFLINE_AFTER_MS, imageUrl: `/api/profile-image?user=${encodeURIComponent(row.user_id)}` }));
+  const ownerCanSeeRoles = member.role === 'owner';
+  const members: PublicMember[] = rows.map((row) => ({ userId: row.user_id, displayName: row.display_name!, joinOrder: row.join_order, online: row.last_seen_at !== null && now - row.last_seen_at <= OFFLINE_AFTER_MS, imageUrl: `/api/profile-image?user=${encodeURIComponent(row.user_id)}`, ...(ownerCanSeeRoles ? { role: row.role } : {}) }));
   let requests: PendingRequest[] = [];
   if (member.role === 'owner' || member.role === 'admin') requests = (await db.prepare("SELECT user_id AS userId,email,requested_at AS requestedAt FROM access_requests WHERE status='pending' ORDER BY requested_at ASC").all<PendingRequest>()).results;
   const board = await db.prepare("SELECT value FROM board_state WHERE key='title'").first<{value: string}>();
