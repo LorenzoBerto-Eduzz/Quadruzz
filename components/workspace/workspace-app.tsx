@@ -52,8 +52,9 @@ async function adminApi(action: string, userId: string): Promise<WorkspacePayloa
   }), 'Administration failed.');
 }
 
-export function WorkspaceApp() {
-  const [data, setData] = useState<WorkspacePayload | null>(null);
+export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload }) {
+  const [data, setData] = useState<WorkspacePayload>(initialData);
+  const [peopleReady, setPeopleReady] = useState(initialData.accessState !== 'approved' || !initialData.members.some((member) => member.online));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -123,7 +124,14 @@ export function WorkspaceApp() {
     else await act('update_profile', { displayName });
   }, [act, finishProfile]);
 
-  useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => window.clearTimeout(timer); }, [refresh]);
+  useEffect(() => {
+    let cancelled = false;
+    if (initialData.accessState === 'approved' && initialData.members.some((member) => member.online)) {
+      void prepareWorkspacePayload(initialData).then(() => { if (!cancelled) setPeopleReady(true); });
+    }
+    const timer = window.setTimeout(() => void refresh(), 0);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [initialData, refresh]);
   const accessState = data?.accessState;
   useEffect(() => {
     if (busy || !accessState || accessState === 'not_requested' || accessState === 'rejected') return;
@@ -163,7 +171,7 @@ export function WorkspaceApp() {
     };
   }, [data?.accessState]);
 
-  if (!data) return <main className="gate"><span>{error || 'Loading…'}</span></main>;
+
   if (data.accessState === 'not_requested' || data.accessState === 'rejected') {
     return <main className="gate"><button className="plain-action" disabled={busy} onClick={() => void act('request_access')}>{busy ? 'Sending…' : 'Request access'}</button>{error && <span className="plain-error">{error}</span>}</main>;
   }
@@ -175,7 +183,7 @@ export function WorkspaceApp() {
   const canManageRequests = isOwner || data.currentUser?.role === 'admin';
   return (
     <main className="quadro">
-      <div className="people" aria-label="People currently present">
+      <div className={`people${peopleReady ? '' : ' people-loading'}`} aria-label="People currently present">
         {presentMembers.map((member) => (
           <img className="person" src={member.imageUrl} alt={member.displayName} title={member.displayName} decoding="sync" loading="eager" key={member.userId} />
         ))}

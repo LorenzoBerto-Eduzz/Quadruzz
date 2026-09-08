@@ -15,6 +15,7 @@ button, input { font: inherit; }
 
 .quadro { position: relative; padding: clamp(1.5rem, 5vw, 4rem); }
 .people { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.people-loading { visibility: hidden; }
 .person { width: clamp(3.5rem, 8vw, 5rem); height: clamp(3.5rem, 8vw, 5rem); border-radius: 50%; object-fit: cover; }
 .gear { position: fixed; left: 1rem; bottom: 1rem; display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: rgba(0,0,0,.08); color: var(--ink); cursor: pointer; }
 .gear svg { width: 1.1rem; height: 1.1rem; }
