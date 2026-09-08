@@ -1,6 +1,6 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
-import { requireApproved } from '@/lib/workspace-data';
+import { getWorkspacePayload, requireApproved } from '@/lib/workspace-data';
 
 export const dynamic = 'force-dynamic';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -26,14 +26,28 @@ export async function POST(request: Request) {
   if (!user) return Response.json({ error: 'Authentication required.' }, { status: 401 });
   try {
     const member = await requireApproved(user.userId);
-    const form = await request.formData(); const file = form.get('image');
+    const form = await request.formData();
+    const displayNameValue = form.get('displayName');
+    const displayName = typeof displayNameValue === 'string' ? displayNameValue.trim() : '';
+    const file = form.get('image');
+    if (!displayName || displayName.length > 48) return Response.json({ error: 'Display name must be 1–48 characters.' }, { status: 400 });
     if (!(file instanceof File)) return Response.json({ error: 'Choose an image.' }, { status: 400 });
     if (!ALLOWED.has(file.type) || file.size === 0 || file.size > MAX_IMAGE_BYTES) return Response.json({ error: 'Use a JPG, PNG, WebP, or GIF up to 5 MB.' }, { status: 400 });
+
     const extension = file.type.split('/')[1].replace('jpeg','jpg');
     const key = `profiles/${user.userId}/${crypto.randomUUID()}.${extension}`;
-    await getFiles().put(key, file.stream(), { httpMetadata: { contentType: file.type } });
-    await getDb().prepare('UPDATE members SET profile_image_key=?,updated_at=? WHERE user_id=?').bind(key, Date.now(), user.userId).run();
-    if (member.profile_image_key) await getFiles().delete(member.profile_image_key);
-    return Response.json({ ok: true, imageUrl: `/api/profile-image?v=${Date.now()}` });
-  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Upload failed.' }, { status: 400 }); }
+    const files = getFiles();
+    await files.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
+    try {
+      const now = Date.now();
+      await getDb().prepare('UPDATE members SET display_name=?,profile_image_key=?,last_seen_at=?,updated_at=? WHERE user_id=?').bind(displayName, key, now, now, user.userId).run();
+    } catch (error) {
+      await files.delete(key);
+      throw error;
+    }
+    if (member.profile_image_key) {
+      try { await files.delete(member.profile_image_key); } catch { /* The new profile is already authoritative. */ }
+    }
+    return Response.json(await getWorkspacePayload(user));
+  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Profile setup failed.' }, { status: 400 }); }
 }

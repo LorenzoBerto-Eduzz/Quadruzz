@@ -27,6 +27,7 @@ export async function POST(request: Request) {
     } else if (body.action === 'heartbeat') {
       await requireApproved(user.userId);
       await db.prepare('UPDATE members SET last_seen_at=?,updated_at=? WHERE user_id=?').bind(now, now, user.userId).run();
+      return reply({ ok: true });
     } else if (body.action === 'update_profile') {
       await requireApproved(user.userId);
       const displayName = body.displayName?.trim();

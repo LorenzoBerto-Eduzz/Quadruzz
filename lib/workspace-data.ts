@@ -10,6 +10,8 @@ export async function ensureConfiguredOwner(user: ChatGPTUser): Promise<void> {
   const ownerId = configuredOwnerUserId();
   if (!ownerId || ownerId !== user.userId) return;
   const db = getDb();
+  const existing = await db.prepare('SELECT email,role,status FROM members WHERE user_id=?').bind(user.userId).first<{email: string; role: Role; status: string}>();
+  if (existing?.email === user.email && existing.role === 'owner' && existing.status === 'approved') return;
   const now = Date.now();
   await db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,last_seen_at,created_at,updated_at)
     VALUES (?,?,'owner','approved',1,NULL,NULL,?, ?, ?)
