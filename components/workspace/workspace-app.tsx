@@ -92,6 +92,17 @@ export function WorkspaceApp() {
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
+  const removeAccess = useCallback(async (userId: string) => {
+    if (!window.confirm('Remove this member’s access? They will need to request approval again.')) return;
+    const epoch = ++requestEpoch.current;
+    setBusy(true); setError('');
+    try {
+      const next = await prepareWorkspacePayload(await adminApi('remove_member', userId));
+      if (requestEpoch.current === epoch) setData(next);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Member removal failed.'); }
+    finally { if (requestEpoch.current === epoch) setBusy(false); }
+  }, []);
+
   const finishProfile = useCallback(async (displayName: string, image: File) => {
     const epoch = ++requestEpoch.current;
     setBusy(true); setError('');
@@ -104,6 +115,11 @@ export function WorkspaceApp() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Profile setup failed.'); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
+
+  const saveProfile = useCallback(async (displayName: string, image: File | null) => {
+    if (image) await finishProfile(displayName, image);
+    else await act('update_profile', { displayName });
+  }, [act, finishProfile]);
 
   useEffect(() => { const timer = window.setTimeout(() => void refresh(), 0); return () => window.clearTimeout(timer); }, [refresh]);
   const accessState = data?.accessState;
@@ -154,12 +170,17 @@ export function WorkspaceApp() {
             <button className="icon-button" type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X aria-hidden="true" /></button>
           </header>
 
+          <ProfileSettings key={data.currentUser?.displayName || ''} displayName={data.currentUser?.displayName || ''} saveProfile={saveProfile} busy={busy} />
+
           <ul className="member-list">
             {data.members.map((member) => (
               <li key={member.userId}>
                 <img src={member.imageUrl} alt="" decoding="sync" loading="eager" />
                 <span>{member.displayName}</span>
                 {isOwner && member.role && <small>{member.role}</small>}
+                {isOwner && member.userId !== data.currentUser?.userId && (
+                  <button className="remove-member" type="button" disabled={busy} onClick={() => void removeAccess(member.userId)}>Remove access</button>
+                )}
               </li>
             ))}
           </ul>
@@ -190,6 +211,29 @@ export function WorkspaceApp() {
         {canManageRequests && data.requests.length > 0 && <span className="gear-dot" aria-label={`${data.requests.length} pending request${data.requests.length === 1 ? '' : 's'}`} />}
       </button>
     </main>
+  );
+}
+
+function ProfileSettings({ displayName, saveProfile, busy }: { displayName: string; saveProfile: (displayName: string, image: File | null) => Promise<void>; busy: boolean }) {
+  const [name, setName] = useState(displayName);
+  const [image, setImage] = useState<File | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+
+  async function submit(event: { preventDefault(): void }) {
+    event.preventDefault();
+    await saveProfile(name, image);
+    setImage(null);
+    if (fileInput.current) fileInput.current.value = '';
+  }
+
+  return (
+    <form className="profile-settings" onSubmit={(event) => void submit(event)}>
+      <h3>Your profile</h3>
+      <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} />
+      <input ref={fileInput} aria-label="New profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setImage(event.target.files?.[0] || null)} />
+      <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button>
+    </form>
   );
 }
 
