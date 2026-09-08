@@ -6,11 +6,29 @@ export const dynamic = 'force-dynamic';
 
 function reply(data: unknown, status = 200) { return Response.json(data, { status }); }
 
-export async function GET() {
+function validPresenceSessionId(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9-]{16,80}$/.test(value);
+}
+
+async function touchPresence(userId: string, sessionId: string, now: number) {
+  await getDb().batch([
+    getDb().prepare('INSERT INTO presence_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(sessionId, userId, now),
+    getDb().prepare('DELETE FROM presence_sessions WHERE last_seen_at<?').bind(now - 5 * 60_000),
+  ]);
+}
+
+export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return reply({ error: 'Authentication required.' }, 401);
-  try { return reply(await getWorkspacePayload(user)); }
-  catch (error) { return reply({ error: error instanceof Error ? error.message : 'Workspace unavailable.' }, 503); }
+  try {
+    await ensureConfiguredOwner(user);
+    const sessionId = new URL(request.url).searchParams.get('presenceSessionId');
+    if (validPresenceSessionId(sessionId)) {
+      try { await requireApproved(user.userId); await touchPresence(user.userId, sessionId, Date.now()); }
+      catch { /* Unapproved visitors do not create presence sessions. */ }
+    }
+    return reply(await getWorkspacePayload(user));
+  } catch (error) { return reply({ error: error instanceof Error ? error.message : 'Workspace unavailable.' }, 503); }
 }
 
 export async function POST(request: Request) {
@@ -27,11 +45,8 @@ export async function POST(request: Request) {
     } else if (body.action === 'heartbeat') {
       await requireApproved(user.userId);
       const sessionId = body.presenceSessionId?.trim();
-      if (!sessionId || !/^[a-zA-Z0-9-]{16,80}$/.test(sessionId)) return reply({ error: 'Invalid presence session.' }, 400);
-      await db.batch([
-        db.prepare('INSERT INTO presence_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(sessionId, user.userId, now),
-        db.prepare('DELETE FROM presence_sessions WHERE last_seen_at<?').bind(now - 5 * 60_000),
-      ]);
+      if (!validPresenceSessionId(sessionId)) return reply({ error: 'Invalid presence session.' }, 400);
+      await touchPresence(user.userId, sessionId, now);
       return reply({ ok: true });
     } else if (body.action === 'leave') {
       const sessionId = body.presenceSessionId?.trim();

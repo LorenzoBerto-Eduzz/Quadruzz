@@ -26,11 +26,10 @@ function decodeProfileImage(url: string): Promise<void> {
 }
 
 async function prepareWorkspacePayload(payload: WorkspacePayload): Promise<WorkspacePayload> {
-  const activeUrls = new Set(payload.members.map((member) => member.imageUrl));
-  await Promise.all([...activeUrls].map((url) => decodeProfileImage(url)));
-  for (const url of decodedProfileImages.keys()) {
-    if (!activeUrls.has(url)) decodedProfileImages.delete(url);
-  }
+  const visibleUrls = payload.members.filter((member) => member.online).map((member) => member.imageUrl);
+  await Promise.all(visibleUrls.map((url) => decodeProfileImage(url)));
+  const backgroundUrls = payload.members.filter((member) => !member.online).map((member) => member.imageUrl);
+  void Promise.allSettled(backgroundUrls.map((url) => decodeProfileImage(url)));
   return payload;
 }
 
@@ -40,8 +39,9 @@ async function readPayload(response: Response, fallback: string): Promise<Worksp
   return data;
 }
 
-async function workspaceApi(init?: RequestInit): Promise<WorkspacePayload> {
-  return readPayload(await fetch('/api/workspace', init), 'Something went wrong.');
+async function workspaceApi(init?: RequestInit, presenceSessionId?: string): Promise<WorkspacePayload> {
+  const url = presenceSessionId ? `/api/workspace?presenceSessionId=${encodeURIComponent(presenceSessionId)}` : '/api/workspace';
+  return readPayload(await fetch(url, init), 'Something went wrong.');
 }
 
 async function adminApi(action: string, userId: string): Promise<WorkspacePayload> {
@@ -58,11 +58,13 @@ export function WorkspaceApp() {
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const requestEpoch = useRef(0);
+  const presenceSessionId = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const epoch = requestEpoch.current;
     try {
-      const next = await prepareWorkspacePayload(await workspaceApi());
+      presenceSessionId.current ||= crypto.randomUUID();
+      const next = await prepareWorkspacePayload(await workspaceApi(undefined, presenceSessionId.current));
       if (requestEpoch.current === epoch) {
         setData(next);
         setError('');
@@ -136,13 +138,14 @@ export function WorkspaceApp() {
   }, [accessState, busy, refresh]);
   useEffect(() => {
     if (data?.accessState !== 'approved') return;
-    const presenceSessionId = crypto.randomUUID();
+    presenceSessionId.current ||= crypto.randomUUID();
+    const sessionId = presenceSessionId.current;
     const pulse = async () => {
-      try { await fetch('/api/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'heartbeat', presenceSessionId }), keepalive: true }); }
+      try { await fetch('/api/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'heartbeat', presenceSessionId: sessionId }), keepalive: true }); }
       catch { /* The stale-session cutoff covers lost connectivity. */ }
     };
     const leave = () => {
-      const body = new Blob([JSON.stringify({ action: 'leave', presenceSessionId })], { type: 'application/json' });
+      const body = new Blob([JSON.stringify({ action: 'leave', presenceSessionId: sessionId })], { type: 'application/json' });
       navigator.sendBeacon('/api/workspace', body);
     };
     const resume = () => { if (document.visibilityState === 'visible') void pulse(); };
