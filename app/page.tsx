@@ -1,20 +1,16 @@
-/* oxlint-disable next/no-html-link-for-pages */
 import { redirect } from 'next/navigation';
 
-import { chatGPTSignInPath, getChatGPTUser } from './chatgpt-auth';
+import { getChatGPTUser } from '@/app/chatgpt-auth';
+import { WorkspaceApp } from '@/components/workspace/workspace-app';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Home() {
   const user = await getChatGPTUser();
 
-  if (user) {
-    redirect('/workspace');
+  if (!user) {
+    redirect('/authentication');
   }
 
-  return (
-    <main className="gate">
-      <a className="plain-action" href={chatGPTSignInPath('/workspace')} target="_top">Sign in with ChatGPT</a>
-    </main>
-  );
+  return <WorkspaceApp />;
 }
