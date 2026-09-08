@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   if (!user) return reply({ error: 'Authentication required.' }, 401);
   try {
     await ensureConfiguredOwner(user);
-    const body = await request.json() as { action?: string; displayName?: string };
+    const body = await request.json() as { action?: string; displayName?: string; presenceSessionId?: string };
     const db = getDb(); const now = Date.now();
     if (body.action === 'request_access') {
       await db.prepare(`INSERT INTO access_requests (user_id,email,status,requested_at,decided_at,decided_by) VALUES (?,?,'pending',?,NULL,NULL)
@@ -26,7 +26,16 @@ export async function POST(request: Request) {
         .bind(user.userId, user.email, now).run();
     } else if (body.action === 'heartbeat') {
       await requireApproved(user.userId);
-      await db.prepare('UPDATE members SET last_seen_at=? WHERE user_id=?').bind(now, user.userId).run();
+      const sessionId = body.presenceSessionId?.trim();
+      if (!sessionId || !/^[a-zA-Z0-9-]{16,80}$/.test(sessionId)) return reply({ error: 'Invalid presence session.' }, 400);
+      await db.batch([
+        db.prepare('INSERT INTO presence_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(sessionId, user.userId, now),
+        db.prepare('DELETE FROM presence_sessions WHERE last_seen_at<?').bind(now - 5 * 60_000),
+      ]);
+      return reply({ ok: true });
+    } else if (body.action === 'leave') {
+      const sessionId = body.presenceSessionId?.trim();
+      if (sessionId) await db.prepare('DELETE FROM presence_sessions WHERE session_id=? AND user_id=?').bind(sessionId, user.userId).run();
       return reply({ ok: true });
     } else if (body.action === 'update_profile') {
       await requireApproved(user.userId);
@@ -44,6 +53,7 @@ export async function POST(request: Request) {
       await db.batch([
         db.prepare("UPDATE members SET status='removed',display_name=NULL,profile_image_key=NULL,last_seen_at=NULL,updated_at=? WHERE user_id=?").bind(now, user.userId),
         db.prepare('DELETE FROM access_requests WHERE user_id=?').bind(user.userId),
+        db.prepare('DELETE FROM presence_sessions WHERE user_id=?').bind(user.userId),
       ]);
     } else return reply({ error: 'Unknown action.' }, 400);
     return reply(await getWorkspacePayload(user));

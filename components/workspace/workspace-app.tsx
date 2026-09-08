@@ -136,13 +136,28 @@ export function WorkspaceApp() {
   }, [accessState, busy, refresh]);
   useEffect(() => {
     if (data?.accessState !== 'approved') return;
+    const presenceSessionId = crypto.randomUUID();
     const pulse = async () => {
-      try { await fetch('/api/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'heartbeat' }) }); }
-      catch { /* The one-second state check will surface persistent connectivity problems. */ }
+      try { await fetch('/api/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'heartbeat', presenceSessionId }), keepalive: true }); }
+      catch { /* The stale-session cutoff covers lost connectivity. */ }
     };
+    const leave = () => {
+      const body = new Blob([JSON.stringify({ action: 'leave', presenceSessionId })], { type: 'application/json' });
+      navigator.sendBeacon('/api/workspace', body);
+    };
+    const resume = () => { if (document.visibilityState === 'visible') void pulse(); };
     void pulse();
     const timer = window.setInterval(() => void pulse(), HEARTBEAT_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    window.addEventListener('pagehide', leave);
+    window.addEventListener('pageshow', resume);
+    document.addEventListener('visibilitychange', resume);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('pagehide', leave);
+      window.removeEventListener('pageshow', resume);
+      document.removeEventListener('visibilitychange', resume);
+      leave();
+    };
   }, [data?.accessState]);
 
   if (!data) return <main className="gate"><span>{error || 'Loading…'}</span></main>;
@@ -177,10 +192,10 @@ export function WorkspaceApp() {
               <li key={member.userId}>
                 <img src={member.imageUrl} alt="" decoding="sync" loading="eager" />
                 <span>{member.displayName}</span>
-                {isOwner && member.role && <small>{member.role}</small>}
                 {isOwner && member.userId !== data.currentUser?.userId && (
-                  <button className="remove-member" type="button" disabled={busy} onClick={() => void removeAccess(member.userId)}>Remove access</button>
+                  <button className="remove-member" type="button" disabled={busy} onClick={() => void removeAccess(member.userId)}>Remove</button>
                 )}
+                {isOwner && member.role && <small>{member.role}</small>}
               </li>
             ))}
           </ul>

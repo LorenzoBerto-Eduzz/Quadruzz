@@ -30,10 +30,10 @@ button, input { font: inherit; }
 .icon-button:hover { background: rgba(255,255,255,.08); }
 .icon-button svg { width: 1rem; height: 1rem; }
 .member-list { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
-.member-list li { display: grid; grid-template-columns: 2rem minmax(0,1fr) auto; align-items: center; gap: .65rem; min-height: 2.25rem; }
+.member-list li { display: grid; grid-template-columns: 2rem minmax(0,1fr) auto auto; align-items: center; gap: .65rem; min-height: 2.25rem; }
 .member-list img { width: 2rem; height: 2rem; border-radius: 50%; object-fit: cover; }
 .member-list small { color: var(--muted); text-transform: capitalize; }
-.remove-member { grid-column: 2 / -1; justify-self: start; border: 0; background: transparent; color: #ffd2d2; padding: .15rem 0; font-size: .875rem; cursor: pointer; }
+.remove-member { justify-self: end; border: 0; background: transparent; color: #ffd2d2; padding: .15rem 0; font-size: .875rem; cursor: pointer; }
 .remove-member:hover { text-decoration: underline; }
 .remove-member:disabled { opacity: .5; cursor: default; }
 .profile-settings { display: grid; gap: .65rem; padding-bottom: 1rem; border-bottom: 1px solid rgba(255,255,255,.14); }

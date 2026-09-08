@@ -30,7 +30,10 @@ export async function POST(request: Request) {
       const target = await db.prepare('SELECT role,profile_image_key FROM members WHERE user_id=?').bind(targetId).first<{role: Role; profile_image_key: string | null}>();
       if (!target || target.role === 'owner' || (target.role === 'admin' && actor.role !== 'owner')) throw new Error('This member cannot be removed by your role.');
       if (target.profile_image_key) await getFiles().delete(target.profile_image_key);
-      await db.prepare("UPDATE members SET status='removed',display_name=NULL,profile_image_key=NULL,last_seen_at=NULL,updated_at=? WHERE user_id=?").bind(now, targetId).run();
+      await db.batch([
+        db.prepare("UPDATE members SET status='removed',display_name=NULL,profile_image_key=NULL,last_seen_at=NULL,updated_at=? WHERE user_id=?").bind(now, targetId),
+        db.prepare('DELETE FROM presence_sessions WHERE user_id=?').bind(targetId),
+      ]);
     } else if (body.action === 'set_role') {
       if (actor.role !== 'owner') throw new Error('Only the owner can manage admin roles.');
       if (!targetId || (body.role !== 'admin' && body.role !== 'member')) throw new Error('Invalid role change.');
@@ -47,6 +50,7 @@ export async function POST(request: Request) {
       await db.batch([
         db.prepare("DELETE FROM members WHERE role!='owner'"),
         db.prepare('DELETE FROM access_requests'),
+        db.prepare('DELETE FROM presence_sessions WHERE user_id!=?').bind(user.userId),
         db.prepare('DELETE FROM board_state'),
       ]);
     } else throw new Error('Unknown action.');
