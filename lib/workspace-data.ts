@@ -1,4 +1,4 @@
-import { getDb, configuredOwnerUserId } from '@/db';
+import { getDb, getFiles, configuredOwnerUserId } from '@/db';
 import type { ChatGPTUser } from '@/app/chatgpt-auth';
 import type { PendingRequest, PublicMember, Role, WorkspacePayload } from '@/lib/workspace-types';
 
@@ -6,10 +6,22 @@ const STALE_PRESENCE_AFTER_MS = 5 * 60_000;
 
 type MemberRow = { user_id: string; email: string; role: Role; status: string; join_order: number; display_name: string | null; profile_image_key: string | null; last_seen_at: number | null; updated_at: number; online?: number };
 
+async function finishPendingTestReset(ownerUserId: string): Promise<void> {
+  const db = getDb();
+  const pending = await db.prepare("SELECT value FROM board_state WHERE key='test_reset_pending'").first<{value: string}>();
+  if (!pending) return;
+  const objects = await getFiles().list({ prefix: 'profiles/' });
+  const ownerPrefix = `profiles/${ownerUserId}/`;
+  const keys = objects.objects.map((item) => item.key).filter((key) => !key.startsWith(ownerPrefix));
+  if (keys.length) await getFiles().delete(keys);
+  await db.prepare("DELETE FROM board_state WHERE key='test_reset_pending'").run();
+}
+
 export async function ensureConfiguredOwner(user: ChatGPTUser): Promise<void> {
   const ownerId = configuredOwnerUserId();
   if (!ownerId || ownerId !== user.userId) return;
   const db = getDb();
+  await finishPendingTestReset(user.userId);
   const existing = await db.prepare('SELECT email,role,status FROM members WHERE user_id=?').bind(user.userId).first<{email: string; role: Role; status: string}>();
   if (existing?.email === user.email && existing.role === 'owner' && existing.status === 'approved') return;
   const now = Date.now();
