@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Settings, X } from 'lucide-react';
 import type { WorkspacePayload } from '@/lib/workspace-types';
 
-const SYNC_INTERVAL_MS = 1_000;
+const SYNC_INTERVAL_MS = 250;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const decodedProfileImages = new Map<string, HTMLImageElement>();
 const pendingProfileImages = new Map<string, Promise<void>>();
