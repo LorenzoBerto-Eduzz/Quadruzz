@@ -7,6 +7,32 @@ import type { WorkspacePayload } from '@/lib/workspace-types';
 
 const SYNC_INTERVAL_MS = 1_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
+const decodedProfileImages = new Map<string, HTMLImageElement>();
+const pendingProfileImages = new Map<string, Promise<void>>();
+
+function decodeProfileImage(url: string): Promise<void> {
+  if (decodedProfileImages.has(url)) return Promise.resolve();
+  const pending = pendingProfileImages.get(url);
+  if (pending) return pending;
+
+  const image = new Image();
+  image.decoding = 'sync';
+  image.src = url;
+  const decoding = image.decode()
+    .then(() => { decodedProfileImages.set(url, image); })
+    .finally(() => { pendingProfileImages.delete(url); });
+  pendingProfileImages.set(url, decoding);
+  return decoding;
+}
+
+async function prepareWorkspacePayload(payload: WorkspacePayload): Promise<WorkspacePayload> {
+  const activeUrls = new Set(payload.members.map((member) => member.imageUrl));
+  await Promise.all([...activeUrls].map((url) => decodeProfileImage(url)));
+  for (const url of decodedProfileImages.keys()) {
+    if (!activeUrls.has(url)) decodedProfileImages.delete(url);
+  }
+  return payload;
+}
 
 async function readPayload(response: Response, fallback: string): Promise<WorkspacePayload> {
   const data = await response.json() as WorkspacePayload & { error?: string };
@@ -36,7 +62,7 @@ export function WorkspaceApp() {
   const refresh = useCallback(async () => {
     const epoch = requestEpoch.current;
     try {
-      const next = await workspaceApi();
+      const next = await prepareWorkspacePayload(await workspaceApi());
       if (requestEpoch.current === epoch) {
         setData(next);
         setError('');
@@ -50,7 +76,7 @@ export function WorkspaceApp() {
     const epoch = ++requestEpoch.current;
     setBusy(true); setError('');
     try {
-      const next = await workspaceApi({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...extra }) });
+      const next = await prepareWorkspacePayload(await workspaceApi({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...extra }) }));
       if (requestEpoch.current === epoch) setData(next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Request failed.'); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
@@ -60,7 +86,7 @@ export function WorkspaceApp() {
     const epoch = ++requestEpoch.current;
     setBusy(true); setError('');
     try {
-      const next = await adminApi(action, userId);
+      const next = await prepareWorkspacePayload(await adminApi(action, userId));
       if (requestEpoch.current === epoch) setData(next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Request decision failed.'); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
@@ -73,7 +99,7 @@ export function WorkspaceApp() {
       const form = new FormData();
       form.set('displayName', displayName);
       form.set('image', image);
-      const next = await readPayload(await fetch('/api/profile-image', { method: 'POST', body: form }), 'Profile setup failed.');
+      const next = await prepareWorkspacePayload(await readPayload(await fetch('/api/profile-image', { method: 'POST', body: form }), 'Profile setup failed.'));
       if (requestEpoch.current === epoch) setData(next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Profile setup failed.'); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
@@ -117,7 +143,7 @@ export function WorkspaceApp() {
     <main className="quadro">
       <div className="people" aria-label="People currently present">
         {presentMembers.map((member) => (
-          <img className="person" src={member.imageUrl} alt={member.displayName} title={member.displayName} key={member.userId} />
+          <img className="person" src={member.imageUrl} alt={member.displayName} title={member.displayName} decoding="sync" loading="eager" key={member.userId} />
         ))}
       </div>
 
@@ -131,7 +157,7 @@ export function WorkspaceApp() {
           <ul className="member-list">
             {data.members.map((member) => (
               <li key={member.userId}>
-                <img src={member.imageUrl} alt="" />
+                <img src={member.imageUrl} alt="" decoding="sync" loading="eager" />
                 <span>{member.displayName}</span>
                 {isOwner && member.role && <small>{member.role}</small>}
               </li>
