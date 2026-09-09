@@ -3,7 +3,7 @@ import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 export const members = sqliteTable('members', {
   userId: text('user_id').primaryKey(),
   email: text('email').notNull(),
-  role: text('role', { enum: ['owner', 'admin', 'member'] }).notNull(),
+  role: text('role', { enum: ['host', 'member'] }).notNull(),
   status: text('status', { enum: ['approved', 'removed'] }).notNull(),
   joinOrder: integer('join_order').notNull().unique(),
   displayName: text('display_name'),

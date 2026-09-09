@@ -10,6 +10,6 @@ export function getFiles(): R2Bucket {
   return env.FILES;
 }
 
-export function configuredOwnerUserId(): string | null {
+export function configuredHostUserId(): string | null {
   return env.QUADRUZZ_OWNER_USER_ID?.trim() || null;
 }

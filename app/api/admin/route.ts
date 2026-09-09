@@ -1,6 +1,6 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
-import { getWorkspacePayload, requireAdmin } from '@/lib/workspace-data';
+import { getWorkspacePayload, requireApproved } from '@/lib/workspace-data';
 import type { Role } from '@/lib/workspace-types';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +9,8 @@ export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: 'Authentication required.' }, { status: 401 });
   try {
-    const actor = await requireAdmin(user.userId);
-    const body = await request.json() as { action?: string; userId?: string; role?: Role; title?: string };
+    const actor = await requireApproved(user.userId);
+    const body = await request.json() as { action?: string; userId?: string; title?: string };
     const db = getDb(); const now = Date.now(); const targetId = body.userId?.trim();
     if (body.action === 'approve') {
       if (!targetId) throw new Error('User is required.');
@@ -28,27 +28,23 @@ export async function POST(request: Request) {
     } else if (body.action === 'remove_member') {
       if (!targetId) throw new Error('User is required.');
       const target = await db.prepare('SELECT role,profile_image_key FROM members WHERE user_id=?').bind(targetId).first<{role: Role; profile_image_key: string | null}>();
-      if (!target || target.role === 'owner' || (target.role === 'admin' && actor.role !== 'owner')) throw new Error('This member cannot be removed by your role.');
+      if (!target || target.role === 'host' || targetId === user.userId) throw new Error('This member cannot be removed.');
       if (target.profile_image_key) await getFiles().delete(target.profile_image_key);
       await db.batch([
         db.prepare("UPDATE members SET status='removed',display_name=NULL,profile_image_key=NULL,last_seen_at=NULL,updated_at=? WHERE user_id=?").bind(now, targetId),
         db.prepare('DELETE FROM presence_sessions WHERE user_id=?').bind(targetId),
       ]);
-    } else if (body.action === 'set_role') {
-      if (actor.role !== 'owner') throw new Error('Only the owner can manage admin roles.');
-      if (!targetId || (body.role !== 'admin' && body.role !== 'member')) throw new Error('Invalid role change.');
-      await db.prepare("UPDATE members SET role=?,updated_at=? WHERE user_id=? AND role!='owner' AND status='approved'").bind(body.role, now, targetId).run();
     } else if (body.action === 'set_board_title') {
       const title = body.title?.trim(); if (!title || title.length > 64) throw new Error('Board title must be 1–64 characters.');
       await db.prepare(`INSERT INTO board_state (key,value,updated_at,updated_by) VALUES ('title',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`).bind(title, now, user.userId).run();
     } else if (body.action === 'clear_test_data') {
-      if (actor.role !== 'owner') throw new Error('Only the owner can clear test data.');
+      if (actor.role !== 'host') throw new Error('Only the host can clear test data.');
       const objects = await getFiles().list({ prefix: 'profiles/' });
-      const ownerPrefix = `profiles/${user.userId}/`;
-      const keys = objects.objects.map((item) => item.key).filter((key) => !key.startsWith(ownerPrefix));
+      const hostPrefix = `profiles/${user.userId}/`;
+      const keys = objects.objects.map((item) => item.key).filter((key) => !key.startsWith(hostPrefix));
       if (keys.length) await getFiles().delete(keys);
       await db.batch([
-        db.prepare("DELETE FROM members WHERE role!='owner'"),
+        db.prepare("DELETE FROM members WHERE role!='host'"),
         db.prepare('DELETE FROM access_requests'),
         db.prepare('DELETE FROM presence_sessions WHERE user_id!=?').bind(user.userId),
         db.prepare('DELETE FROM board_state'),

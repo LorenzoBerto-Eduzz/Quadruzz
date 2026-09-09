@@ -1,10 +1,10 @@
-export type Role = 'owner' | 'admin' | 'member';
+export type Role = 'host' | 'member';
 export type AccessState = 'not_requested' | 'pending' | 'rejected' | 'onboarding' | 'approved';
 
 export type PublicMember = {
   userId: string;
   displayName: string;
-  role?: Role;
+  canRemove: boolean;
   joinOrder: number;
   online: boolean;
   imageUrl: string;
@@ -18,5 +18,5 @@ export type WorkspacePayload = {
   members: PublicMember[];
   requests: PendingRequest[];
   boardTitle: string;
-  ownerConfigurationRequired?: boolean;
+  hostConfigurationRequired?: boolean;
 };

@@ -202,13 +202,11 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
   if (data.accessState === 'onboarding') return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} error={error} />;
 
   const presentMembers = data.members.filter((member) => member.online);
-  const isOwner = data.currentUser?.role === 'owner';
-  const canManageRequests = isOwner || data.currentUser?.role === 'admin';
   return (
     <main className="quadro">
       <div className={`people${peopleReady ? '' : ' people-loading'}`} aria-label="People currently present">
         {presentMembers.map((member) => (
-          <img className="person" src={member.imageUrl} alt={member.displayName} title={member.displayName} decoding="sync" loading="eager" key={member.userId} />
+          <img className="person" src={member.imageUrl} alt="" title={member.displayName} decoding="sync" loading="eager" key={member.userId} onError={(event) => { event.currentTarget.hidden = true; }} onLoad={(event) => { event.currentTarget.hidden = false; }} />
         ))}
       </div>
 
@@ -224,18 +222,15 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
           <ul className="member-list">
             {data.members.map((member) => (
               <li key={member.userId}>
-                <img src={member.imageUrl} alt="" decoding="sync" loading="eager" />
+                <img src={member.imageUrl} alt="" decoding="sync" loading="eager" onError={(event) => { event.currentTarget.hidden = true; }} onLoad={(event) => { event.currentTarget.hidden = false; }} />
                 <span>{member.displayName}</span>
-                {isOwner && member.userId !== data.currentUser?.userId && (
-                  <button className="remove-member" type="button" disabled={busy} onClick={() => void removeAccess(member.userId)}>Remove</button>
+                {member.canRemove && (
+                  <button className="remove-member" type="button" aria-label={`Remove ${member.displayName}’s access`} title="Remove access" disabled={busy} onClick={() => void removeAccess(member.userId)}><X aria-hidden="true" /></button>
                 )}
-                {isOwner && member.role && <small>{member.role}</small>}
               </li>
             ))}
           </ul>
-
-          {canManageRequests && (
-            <div className="requests">
+          <div className="requests">
               <h3>Requests{data.requests.length > 0 && <span className="request-count">{data.requests.length}</span>}</h3>
               {data.requests.length === 0 ? <p>No pending requests.</p> : data.requests.map((request) => (
                 <div className="request" key={request.userId}>
@@ -246,8 +241,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
                   </div>
                 </div>
               ))}
-            </div>
-          )}
+          </div>
 
           {error && <p className="plain-error">{error}</p>}
           {/* oxlint-disable-next-line next/no-html-link-for-pages */}
@@ -257,7 +251,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
 
       <button className="gear" type="button" aria-label="Settings" title="Settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
         <Settings aria-hidden="true" />
-        {canManageRequests && data.requests.length > 0 && <span className="gear-dot" aria-label={`${data.requests.length} pending request${data.requests.length === 1 ? '' : 's'}`} />}
+        {data.requests.length > 0 && <span className="gear-dot" aria-label={`${data.requests.length} pending request${data.requests.length === 1 ? '' : 's'}`} />}
       </button>
     </main>
   );

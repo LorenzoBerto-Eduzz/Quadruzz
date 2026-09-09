@@ -1,6 +1,6 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
-import { ensureConfiguredOwner, getWorkspacePayload, requireApproved } from '@/lib/workspace-data';
+import { ensureConfiguredHost, getWorkspacePayload, requireApproved } from '@/lib/workspace-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return reply({ error: 'Authentication required.' }, 401);
   try {
-    await ensureConfiguredOwner(user);
+    await ensureConfiguredHost(user);
     const sessionId = new URL(request.url).searchParams.get('presenceSessionId');
     if (validPresenceSessionId(sessionId)) {
       try { await requireApproved(user.userId); await touchPresence(user.userId, sessionId, Date.now()); }
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return reply({ error: 'Authentication required.' }, 401);
   try {
-    await ensureConfiguredOwner(user);
+    await ensureConfiguredHost(user);
     const body = await request.json() as { action?: string; displayName?: string; presenceSessionId?: string };
     const db = getDb(); const now = Date.now();
     if (body.action === 'request_access') {
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
       await db.prepare('UPDATE members SET display_name=NULL,profile_image_key=NULL,last_seen_at=NULL,updated_at=? WHERE user_id=?').bind(now, user.userId).run();
     } else if (body.action === 'delete_profile') {
       const member = await requireApproved(user.userId);
-      if (member.role === 'owner') return reply({ error: 'The permanent owner profile cannot be deleted.' }, 400);
+      if (member.role === 'host') return reply({ error: 'The permanent host profile cannot be deleted.' }, 400);
       if (member.profile_image_key) await getFiles().delete(member.profile_image_key);
       await db.batch([
         db.prepare("UPDATE members SET status='removed',display_name=NULL,profile_image_key=NULL,last_seen_at=NULL,updated_at=? WHERE user_id=?").bind(now, user.userId),
