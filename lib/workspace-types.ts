@@ -14,7 +14,7 @@ export type PendingRequest = { userId: string; email: string; requestedAt: numbe
 
 export type WorkspacePayload = {
   accessState: AccessState;
-  currentUser: null | { userId: string; email: string; role?: Role; displayName?: string | null; imageUrl?: string | null };
+  currentUser: null | { userId: string; email: string; role?: Role; displayName?: string | null; imageUrl?: string | null; pendingImageReceived?: boolean };
   members: PublicMember[];
   requests: PendingRequest[];
   boardTitle: string;

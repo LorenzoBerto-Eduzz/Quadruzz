@@ -38,11 +38,7 @@ export async function POST(request: Request) {
     await ensureConfiguredHost(user);
     const body = await request.json() as { action?: string; displayName?: string; presenceSessionId?: string };
     const db = getDb(); const now = Date.now();
-    if (body.action === 'request_access') {
-      await db.prepare(`INSERT INTO access_requests (user_id,email,status,requested_at,decided_at,decided_by) VALUES (?,?,'pending',?,NULL,NULL)
-        ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,status='pending',requested_at=excluded.requested_at,decided_at=NULL,decided_by=NULL`)
-        .bind(user.userId, user.email, now).run();
-    } else if (body.action === 'heartbeat') {
+    if (body.action === 'heartbeat') {
       await requireApproved(user.userId);
       const sessionId = body.presenceSessionId?.trim();
       if (!validPresenceSessionId(sessionId)) return reply({ error: 'Invalid presence session.' }, 400);

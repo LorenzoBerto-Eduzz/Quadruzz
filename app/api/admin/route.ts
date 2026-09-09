@@ -5,6 +5,8 @@ import type { Role } from '@/lib/workspace-types';
 
 export const dynamic = 'force-dynamic';
 
+type PendingProfile = { email: string; display_name: string; profile_image_key: string; expires_at: number };
+
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: 'Authentication required.' }, { status: 401 });
@@ -14,18 +16,21 @@ export async function POST(request: Request) {
     const db = getDb(); const now = Date.now(); const targetId = body.userId?.trim();
     if (body.action === 'approve') {
       if (!targetId) throw new Error('User is required.');
-      const pending = await db.prepare("SELECT email FROM access_requests WHERE user_id=? AND status='pending'").bind(targetId).first<{email: string}>();
-      if (!pending) throw new Error('Pending request not found.');
+      const pending = await db.prepare("SELECT email,display_name,profile_image_key,expires_at FROM access_requests WHERE user_id=? AND status='pending' AND expires_at>?").bind(targetId, now).first<PendingProfile>();
+      if (!pending?.display_name || !pending.profile_image_key) throw new Error('Pending request is incomplete or expired.');
       const next = await db.prepare('SELECT COALESCE(MAX(join_order),0)+1 AS value FROM members').first<{value: number}>();
       await db.batch([
-        db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,last_seen_at,created_at,updated_at) VALUES (?,?,'member','approved',?,NULL,NULL,NULL,?,?)
-          ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,role='member',status='approved',updated_at=excluded.updated_at`).bind(targetId, pending.email, next?.value || 1, now, now),
-        db.prepare("UPDATE access_requests SET status='approved',decided_at=?,decided_by=? WHERE user_id=?").bind(now, user.userId, targetId),
+        db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,last_seen_at,created_at,updated_at) VALUES (?,?,'member','approved',?,?,?,NULL,?,?)
+          ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,role='member',status='approved',display_name=excluded.display_name,profile_image_key=excluded.profile_image_key,last_seen_at=NULL,updated_at=excluded.updated_at`).bind(targetId, pending.email, next?.value || 1, pending.display_name, pending.profile_image_key, now, now),
+        db.prepare('DELETE FROM access_requests WHERE user_id=?').bind(targetId),
       ]);
     } else if (body.action === 'reject') {
       if (!targetId) throw new Error('User is required.');
-      await db.prepare("UPDATE access_requests SET status='rejected',decided_at=?,decided_by=? WHERE user_id=? AND status='pending'").bind(now, user.userId, targetId).run();
+      const pending = await db.prepare("SELECT profile_image_key FROM access_requests WHERE user_id=? AND status='pending'").bind(targetId).first<{profile_image_key: string | null}>();
+      if (pending?.profile_image_key) await getFiles().delete(pending.profile_image_key);
+      await db.prepare("DELETE FROM access_requests WHERE user_id=? AND status='pending'").bind(targetId).run();
     } else if (body.action === 'remove_member') {
+      if (actor.role !== 'host') throw new Error('Only the host can remove members.');
       if (!targetId) throw new Error('User is required.');
       const target = await db.prepare('SELECT role,profile_image_key FROM members WHERE user_id=?').bind(targetId).first<{role: Role; profile_image_key: string | null}>();
       if (!target || target.role === 'host' || targetId === user.userId) throw new Error('This member cannot be removed.');
@@ -42,6 +47,8 @@ export async function POST(request: Request) {
       const objects = await getFiles().list({ prefix: 'profiles/' });
       const hostPrefix = `profiles/${user.userId}/`;
       const keys = objects.objects.map((item) => item.key).filter((key) => !key.startsWith(hostPrefix));
+      const pendingObjects = await getFiles().list({ prefix: 'pending-profiles/' });
+      keys.push(...pendingObjects.objects.map((item) => item.key));
       if (keys.length) await getFiles().delete(keys);
       await db.batch([
         db.prepare("DELETE FROM members WHERE role!='host'"),

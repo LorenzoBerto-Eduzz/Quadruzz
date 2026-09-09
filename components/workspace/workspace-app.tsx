@@ -2,7 +2,7 @@
 /* oxlint-disable next/no-img-element */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Settings, X } from 'lucide-react';
+import { Check, Settings, X } from 'lucide-react';
 import type { WorkspacePayload } from '@/lib/workspace-types';
 
 const SYNC_INTERVAL_MS = 250;
@@ -38,7 +38,7 @@ function decodeProfileImage(url: string): Promise<void> {
 
 async function prepareWorkspacePayload(payload: WorkspacePayload): Promise<WorkspacePayload> {
   const visibleUrls = payload.members.filter((member) => member.online).map((member) => member.imageUrl);
-  await Promise.all(visibleUrls.map((url) => decodeProfileImage(url)));
+  await Promise.allSettled(visibleUrls.map((url) => decodeProfileImage(url)));
   const backgroundUrls = payload.members.filter((member) => !member.online).map((member) => member.imageUrl);
   void Promise.allSettled(backgroundUrls.map((url) => decodeProfileImage(url)));
   return payload;
@@ -71,6 +71,8 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
   const [settingsOpen, setSettingsOpen] = useState(false);
   const requestEpoch = useRef(0);
   const presenceSessionId = useRef<string | null>(null);
+  const settingsRef = useRef<HTMLDialogElement>(null);
+  const gearRef = useRef<HTMLButtonElement>(null);
 
   const refresh = useCallback(async () => {
     const epoch = requestEpoch.current;
@@ -194,12 +196,19 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     };
   }, [data?.accessState]);
 
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!settingsRef.current?.contains(target) && !gearRef.current?.contains(target)) setSettingsOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    return () => document.removeEventListener('pointerdown', closeOutside);
+  }, [settingsOpen]);
 
-  if (data.accessState === 'not_requested' || data.accessState === 'rejected') {
-    return <main className="gate"><button className="plain-action" disabled={busy} onClick={() => void act('request_access')}>{busy ? 'Sending…' : 'Request access'}</button>{error && <span className="plain-error">{error}</span>}</main>;
+  if (data.accessState === 'not_requested' || data.accessState === 'rejected' || data.accessState === 'pending' || data.accessState === 'onboarding') {
+    return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} error={error} />;
   }
-  if (data.accessState === 'pending') return <main className="gate"><span>Waiting for approval</span>{error && <span className="plain-error">{error}</span>}</main>;
-  if (data.accessState === 'onboarding') return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} error={error} />;
 
   const presentMembers = data.members.filter((member) => member.online);
   return (
@@ -211,13 +220,13 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
       </div>
 
       {settingsOpen && (
-        <dialog className="settings-popup" aria-label="Quadruzz settings" open>
-          <header className="settings-header">
-            <h2>Members</h2>
-            <button className="icon-button" type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X aria-hidden="true" /></button>
-          </header>
+        <dialog ref={settingsRef} className="settings-popup" aria-label="Quadruzz settings" open>
 
           <ProfileSettings key={data.currentUser?.displayName || ''} displayName={data.currentUser?.displayName || ''} saveProfile={saveProfile} busy={busy} />
+          {/* oxlint-disable-next-line next/no-html-link-for-pages */}
+          <a className="sign-out" href="/signout-with-chatgpt?return_to=/">Sign out</a>
+          <div className="settings-divider" />
+          <h3 className="members-title">Members</h3>
 
           <ul className="member-list">
             {data.members.map((member) => (
@@ -229,27 +238,21 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
                 )}
               </li>
             ))}
-          </ul>
-          <div className="requests">
-              <h3>Requests{data.requests.length > 0 && <span className="request-count">{data.requests.length}</span>}</h3>
-              {data.requests.length === 0 ? <p>No pending requests.</p> : data.requests.map((request) => (
-                <div className="request" key={request.userId}>
-                  <span>{request.email}</span>
-                  <div className="request-actions">
-                    <button type="button" disabled={busy} onClick={() => void decideRequest('approve', request.userId)}>Approve</button>
-                    <button type="button" disabled={busy} onClick={() => void decideRequest('reject', request.userId)}>Reject</button>
-                  </div>
+            {data.requests.map((request) => (
+              <li className="pending-member" key={request.userId}>
+                <span>{request.email}</span>
+                <div className="request-actions">
+                  <button className="approve-request" type="button" aria-label={`Approve ${request.email}`} title="Approve" disabled={busy} onClick={() => void decideRequest('approve', request.userId)}><Check aria-hidden="true" /></button>
+                  <button className="reject-request" type="button" aria-label={`Reject ${request.email}`} title="Reject" disabled={busy} onClick={() => void decideRequest('reject', request.userId)}><X aria-hidden="true" /></button>
                 </div>
-              ))}
-          </div>
-
+              </li>
+            ))}
+          </ul>
           {error && <p className="plain-error">{error}</p>}
-          {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-          <a className="sign-out" href="/signout-with-chatgpt?return_to=/">Sign out</a>
         </dialog>
       )}
 
-      <button className="gear" type="button" aria-label="Settings" title="Settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
+      <button ref={gearRef} className="gear" type="button" aria-label="Settings" title="Settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
         <Settings aria-hidden="true" />
         {data.requests.length > 0 && <span className="gear-dot" aria-label={`${data.requests.length} pending request${data.requests.length === 1 ? '' : 's'}`} />}
       </button>
@@ -272,7 +275,7 @@ function ProfileSettings({ displayName, saveProfile, busy }: { displayName: stri
 
   return (
     <form className="profile-settings" onSubmit={(event) => void submit(event)}>
-      <h3>Your profile</h3>
+      <h3>You</h3>
       <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} />
       <input ref={fileInput} aria-label="New profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setImage(event.target.files?.[0] || null)} />
       <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button>
@@ -281,22 +284,28 @@ function ProfileSettings({ displayName, saveProfile, busy }: { displayName: stri
 }
 
 function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => Promise<void>; busy: boolean; error: string }) {
+  const pending = data.accessState === 'pending';
+  const hostOnboarding = data.accessState === 'onboarding' && data.currentUser?.role === 'host';
   const [name, setName] = useState(data.currentUser?.displayName || '');
   const [image, setImage] = useState<File | null>(null);
   const [preparedImage, setPreparedImage] = useState<Promise<LocalProfileImage | null> | null>(null);
   const [localError, setLocalError] = useState('');
   async function submit(event: { preventDefault(): void }) {
     event.preventDefault();
+    if (pending) return;
     if (!image) { setLocalError('Choose an image.'); return; }
     setLocalError('');
     await finishProfile(name, image, preparedImage || undefined);
   }
+  const buttonLabel = pending ? 'Waiting for approval' : busy ? (hostOnboarding ? 'Entering…' : 'Sending…') : (hostOnboarding ? 'Enter' : 'Request access');
   return (
     <main className="gate">
       <form className="profile-setup" onSubmit={(event) => void submit(event)}>
-        <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} />
-        <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required onChange={(event) => { const file = event.target.files?.[0] || null; setImage(file); setPreparedImage(file ? decodeLocalProfileImage(file) : null); }} />
-        <button className="plain-action" disabled={busy} type="submit">{busy ? 'Entering…' : 'Enter'}</button>
+        <h1>Cross</h1>
+        <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={pending} onChange={(event) => setName(event.target.value)} />
+        <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required disabled={pending} onChange={(event) => { const file = event.target.files?.[0] || null; setImage(file); setPreparedImage(file ? decodeLocalProfileImage(file) : null); }} />
+        {pending && data.currentUser?.pendingImageReceived && !image && <span className="pending-image-note">Profile image received</span>}
+        <button className="plain-action" disabled={busy || pending} type="submit">{buttonLabel}</button>
         {(localError || error) && <span className="plain-error">{localError || error}</span>}
       </form>
     </main>

@@ -20,6 +20,9 @@ export const accessRequests = sqliteTable('access_requests', {
   requestedAt: integer('requested_at').notNull(),
   decidedAt: integer('decided_at'),
   decidedBy: text('decided_by'),
+  displayName: text('display_name'),
+  profileImageKey: text('profile_image_key'),
+  expiresAt: integer('expires_at'),
 });
 
 export const boardState = sqliteTable('board_state', {

@@ -1,6 +1,6 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
-import { getWorkspacePayload, requireApproved } from '@/lib/workspace-data';
+import { ensureConfiguredHost, getWorkspacePayload, pendingRequestExpiresAt, requireApproved } from '@/lib/workspace-data';
 
 export const dynamic = 'force-dynamic';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: 'Authentication required.' }, { status: 401 });
   try {
-    const member = await requireApproved(user.userId);
+    await ensureConfiguredHost(user);
     const form = await request.formData();
     const displayNameValue = form.get('displayName');
     const displayName = typeof displayNameValue === 'string' ? displayNameValue.trim() : '';
@@ -34,19 +34,30 @@ export async function POST(request: Request) {
     if (!(file instanceof File)) return Response.json({ error: 'Choose an image.' }, { status: 400 });
     if (!ALLOWED.has(file.type) || file.size === 0 || file.size > MAX_IMAGE_BYTES) return Response.json({ error: 'Use a JPG, PNG, WebP, or GIF up to 5 MB.' }, { status: 400 });
 
+    const db = getDb();
+    const member = await db.prepare("SELECT profile_image_key FROM members WHERE user_id=? AND status='approved'").bind(user.userId).first<{profile_image_key: string | null}>();
+    const previousRequest = member ? null : await db.prepare('SELECT profile_image_key FROM access_requests WHERE user_id=?').bind(user.userId).first<{profile_image_key: string | null}>();
     const extension = file.type.split('/')[1].replace('jpeg','jpg');
-    const key = `profiles/${user.userId}/${crypto.randomUUID()}.${extension}`;
+    const key = `${member ? 'profiles' : 'pending-profiles'}/${user.userId}/${crypto.randomUUID()}.${extension}`;
     const files = getFiles();
     await files.put(key, file.stream(), { httpMetadata: { contentType: file.type } });
     try {
       const now = Date.now();
-      await getDb().prepare('UPDATE members SET display_name=?,profile_image_key=?,last_seen_at=?,updated_at=? WHERE user_id=?').bind(displayName, key, now, now, user.userId).run();
+      if (member) {
+        await db.prepare('UPDATE members SET display_name=?,profile_image_key=?,last_seen_at=?,updated_at=? WHERE user_id=?').bind(displayName, key, now, now, user.userId).run();
+      } else {
+        await db.prepare(`INSERT INTO access_requests (user_id,email,status,requested_at,decided_at,decided_by,display_name,profile_image_key,expires_at)
+          VALUES (?,?,'pending',?,NULL,NULL,?,?,?)
+          ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,status='pending',requested_at=excluded.requested_at,decided_at=NULL,decided_by=NULL,display_name=excluded.display_name,profile_image_key=excluded.profile_image_key,expires_at=excluded.expires_at`)
+          .bind(user.userId, user.email, now, displayName, key, pendingRequestExpiresAt(now)).run();
+      }
     } catch (error) {
       await files.delete(key);
       throw error;
     }
-    if (member.profile_image_key) {
-      try { await files.delete(member.profile_image_key); } catch { /* The new profile is already authoritative. */ }
+    const previousKey = member?.profile_image_key || previousRequest?.profile_image_key;
+    if (previousKey && previousKey !== key) {
+      try { await files.delete(previousKey); } catch { /* The new image is already authoritative. */ }
     }
     return Response.json(await getWorkspacePayload(user));
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Profile setup failed.' }, { status: 400 }); }
