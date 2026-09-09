@@ -4,7 +4,7 @@ import { ensureConfiguredHost, getWorkspacePayload, requireApproved } from '@/li
 
 export const dynamic = 'force-dynamic';
 
-function reply(data: unknown, status = 200) { return Response.json(data, { status }); }
+function reply(data: unknown, status = 200) { return Response.json(data, { status, headers: { 'cache-control': 'no-store, max-age=0' } }); }
 
 function validPresenceSessionId(value: string | null | undefined): value is string {
   return typeof value === 'string' && /^[a-zA-Z0-9-]{16,80}$/.test(value);

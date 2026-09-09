@@ -52,7 +52,7 @@ async function readPayload(response: Response, fallback: string): Promise<Worksp
 
 async function workspaceApi(init?: RequestInit, presenceSessionId?: string): Promise<WorkspacePayload> {
   const url = presenceSessionId ? `/api/workspace?presenceSessionId=${encodeURIComponent(presenceSessionId)}` : '/api/workspace';
-  return readPayload(await fetch(url, init), 'Something went wrong.');
+  return readPayload(await fetch(url, { ...init, cache: 'no-store' }), 'Something went wrong.');
 }
 
 async function adminApi(action: string, userId: string): Promise<WorkspacePayload> {
@@ -159,7 +159,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
   }, [initialData, refresh]);
   const accessState = data?.accessState;
   useEffect(() => {
-    if (busy || !accessState || accessState === 'not_requested' || accessState === 'rejected') return;
+    if (busy || !accessState) return;
     let cancelled = false;
     let timer: number | undefined;
     const synchronize = async () => {
