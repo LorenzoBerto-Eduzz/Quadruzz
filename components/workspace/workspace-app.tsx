@@ -10,6 +10,17 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const decodedProfileImages = new Map<string, HTMLImageElement>();
 const pendingProfileImages = new Map<string, Promise<void>>();
 
+type LocalProfileImage = { url: string; image: HTMLImageElement };
+
+async function decodeLocalProfileImage(file: File): Promise<LocalProfileImage | null> {
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  image.decoding = 'sync';
+  image.src = url;
+  try { await image.decode(); return { url, image }; }
+  catch { URL.revokeObjectURL(url); return null; }
+}
+
 function decodeProfileImage(url: string): Promise<void> {
   if (decodedProfileImages.has(url)) return Promise.resolve();
   const pending = pendingProfileImages.get(url);
@@ -106,14 +117,26 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
-  const finishProfile = useCallback(async (displayName: string, image: File) => {
+  const finishProfile = useCallback(async (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => {
     const epoch = ++requestEpoch.current;
     setBusy(true); setError('');
     try {
+      const localImagePromise = preparedImage || decodeLocalProfileImage(image);
       const form = new FormData();
       form.set('displayName', displayName);
       form.set('image', image);
-      const next = await prepareWorkspacePayload(await readPayload(await fetch('/api/profile-image', { method: 'POST', body: form }), 'Profile setup failed.'));
+      const [payload, localImage] = await Promise.all([
+        readPayload(await fetch('/api/profile-image', { method: 'POST', body: form }), 'Profile setup failed.'),
+        localImagePromise,
+      ]);
+      const currentUserId = payload.currentUser?.userId;
+      const serverImageUrl = payload.members.find((member) => member.userId === currentUserId)?.imageUrl;
+      const localPayload = localImage && currentUserId
+        ? { ...payload, members: payload.members.map((member) => member.userId === currentUserId ? { ...member, imageUrl: localImage.url } : member) }
+        : payload;
+      if (localImage) decodedProfileImages.set(localImage.url, localImage.image);
+      const next = await prepareWorkspacePayload(localPayload);
+      if (serverImageUrl) void decodeProfileImage(serverImageUrl);
       if (requestEpoch.current === epoch) setData(next);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Profile setup failed.'); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
@@ -263,21 +286,22 @@ function ProfileSettings({ displayName, saveProfile, busy }: { displayName: stri
   );
 }
 
-function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File) => Promise<void>; busy: boolean; error: string }) {
+function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => Promise<void>; busy: boolean; error: string }) {
   const [name, setName] = useState(data.currentUser?.displayName || '');
   const [image, setImage] = useState<File | null>(null);
+  const [preparedImage, setPreparedImage] = useState<Promise<LocalProfileImage | null> | null>(null);
   const [localError, setLocalError] = useState('');
   async function submit(event: { preventDefault(): void }) {
     event.preventDefault();
     if (!image) { setLocalError('Choose an image.'); return; }
     setLocalError('');
-    await finishProfile(name, image);
+    await finishProfile(name, image, preparedImage || undefined);
   }
   return (
     <main className="gate">
       <form className="profile-setup" onSubmit={(event) => void submit(event)}>
         <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} />
-        <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required onChange={(event) => setImage(event.target.files?.[0] || null)} />
+        <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required onChange={(event) => { const file = event.target.files?.[0] || null; setImage(file); setPreparedImage(file ? decodeLocalProfileImage(file) : null); }} />
         <button className="plain-action" disabled={busy} type="submit">{busy ? 'Entering…' : 'Enter'}</button>
         {(localError || error) && <span className="plain-error">{localError || error}</span>}
       </form>
