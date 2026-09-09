@@ -44,6 +44,10 @@ export async function POST(request: Request) {
       if (!validPresenceSessionId(sessionId)) return reply({ error: 'Invalid presence session.' }, 400);
       await touchPresence(user.userId, sessionId, now);
       return reply({ ok: true });
+    } else if (body.action === 'leave_all') {
+      await requireApproved(user.userId);
+      await db.prepare('DELETE FROM presence_sessions WHERE user_id=?').bind(user.userId).run();
+      return reply({ ok: true });
     } else if (body.action === 'leave') {
       const sessionId = body.presenceSessionId?.trim();
       if (sessionId) await db.prepare('DELETE FROM presence_sessions WHERE session_id=? AND user_id=?').bind(sessionId, user.userId).run();

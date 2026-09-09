@@ -54,7 +54,7 @@ button, input { font: inherit; }
 .request-actions svg { width: .95rem; height: .95rem; }
 .approve-request { color: #8de4ad; }
 .reject-request { color: #ffaaaa; }
-.sign-out { min-height: 2.25rem; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .4rem .65rem; cursor: pointer; text-decoration: none; }
+.sign-out { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .4rem .65rem; cursor: pointer; text-decoration: none; }
 .sign-out:hover { background: rgba(255,255,255,.07); }
-sign-out { display: inline-flex; align-items: center; justify-content: center; }
+.sign-out:disabled { opacity: .5; cursor: default; }
 .gear-dot { position: absolute; top: -.1rem; right: -.1rem; width: .65rem; height: .65rem; border: 2px solid var(--blue); border-radius: 50%; background: #f2d17b; }

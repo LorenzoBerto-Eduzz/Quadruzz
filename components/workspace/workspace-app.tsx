@@ -63,6 +63,10 @@ async function adminApi(action: string, userId: string): Promise<WorkspacePayloa
   }), 'Administration failed.');
 }
 
+function ProfileImage({ src, className, title }: { src: string; className?: string; title?: string }) {
+  const [readyUrl, setReadyUrl] = useState<string | null>(() => decodedProfileImages.has(src) ? src : null);
+  return <img className={className} src={src} alt="" title={title} decoding="sync" loading="eager" style={{ visibility: readyUrl === src ? 'visible' : 'hidden' }} onLoad={() => setReadyUrl(src)} onError={() => setReadyUrl(null)} />;
+}
 export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload }) {
   const [data, setData] = useState<WorkspacePayload>(initialData);
   const [peopleReady, setPeopleReady] = useState(initialData.accessState !== 'approved' || !initialData.members.some((member) => member.online));
@@ -140,10 +144,19 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
       const next = await prepareWorkspacePayload(localPayload);
       if (serverImageUrl) void decodeProfileImage(serverImageUrl);
       if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Profile setup failed.'); }
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Profile setup failed.'); return false; }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
+  const signOut = useCallback(async () => {
+    setBusy(true);
+    try {
+      await fetch('/api/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'leave_all' }), cache: 'no-store', keepalive: true });
+    } finally {
+      window.location.assign('/signout-with-chatgpt?return_to=/');
+    }
+  }, []);
   const saveProfile = useCallback(async (displayName: string, image: File | null) => {
     if (image) await finishProfile(displayName, image);
     else await act('update_profile', { displayName });
@@ -215,7 +228,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     <main className="quadro">
       <div className={`people${peopleReady ? '' : ' people-loading'}`} aria-label="People currently present">
         {presentMembers.map((member) => (
-          <img className="person" src={member.imageUrl} alt="" title={member.displayName} decoding="sync" loading="eager" key={member.userId} onError={(event) => { event.currentTarget.hidden = true; }} onLoad={(event) => { event.currentTarget.hidden = false; }} />
+          <ProfileImage className="person" src={member.imageUrl} title={member.displayName} key={member.userId} />
         ))}
       </div>
 
@@ -223,15 +236,14 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
         <dialog ref={settingsRef} className="settings-popup" aria-label="Quadruzz settings" open>
 
           <ProfileSettings key={data.currentUser?.displayName || ''} displayName={data.currentUser?.displayName || ''} saveProfile={saveProfile} busy={busy} />
-          {/* oxlint-disable-next-line next/no-html-link-for-pages */}
-          <a className="sign-out" href="/signout-with-chatgpt?return_to=/">Sign out</a>
+          <button className="sign-out" type="button" disabled={busy} onClick={() => void signOut()}>Sign out</button>
           <div className="settings-divider" />
           <h3 className="members-title">Members</h3>
 
           <ul className="member-list">
             {data.members.map((member) => (
               <li key={member.userId}>
-                <img src={member.imageUrl} alt="" decoding="sync" loading="eager" onError={(event) => { event.currentTarget.hidden = true; }} onLoad={(event) => { event.currentTarget.hidden = false; }} />
+                <ProfileImage src={member.imageUrl} />
                 <span>{member.displayName}</span>
                 {member.canRemove && (
                   <button className="remove-member" type="button" aria-label={`Remove ${member.displayName}’s access`} title="Remove access" disabled={busy} onClick={() => void removeAccess(member.userId)}><X aria-hidden="true" /></button>
@@ -283,8 +295,9 @@ function ProfileSettings({ displayName, saveProfile, busy }: { displayName: stri
   );
 }
 
-function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => Promise<void>; busy: boolean; error: string }) {
+function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; error: string }) {
   const pending = data.accessState === 'pending';
+  const [optimisticPending, setOptimisticPending] = useState(false);
   const hostOnboarding = data.accessState === 'onboarding' && data.currentUser?.role === 'host';
   const [name, setName] = useState(data.currentUser?.displayName || '');
   const [image, setImage] = useState<File | null>(null);
@@ -295,17 +308,20 @@ function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePay
     if (pending) return;
     if (!image) { setLocalError('Choose an image.'); return; }
     setLocalError('');
-    await finishProfile(name, image, preparedImage || undefined);
+    if (!hostOnboarding) setOptimisticPending(true);
+    const succeeded = await finishProfile(name, image, preparedImage || undefined);
+    if (!succeeded) setOptimisticPending(false);
   }
-  const buttonLabel = pending ? 'Waiting for approval' : busy ? (hostOnboarding ? 'Entering…' : 'Sending…') : (hostOnboarding ? 'Enter' : 'Request access');
+  const waiting = pending || optimisticPending;
+  const buttonLabel = waiting ? 'Waiting for approval' : busy && hostOnboarding ? 'Entering…' : hostOnboarding ? 'Enter' : 'Request access';
   return (
     <main className="gate">
       <form className="profile-setup" onSubmit={(event) => void submit(event)}>
         <h1>Cross</h1>
-        <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={pending} onChange={(event) => setName(event.target.value)} />
-        <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required disabled={pending} onChange={(event) => { const file = event.target.files?.[0] || null; setImage(file); setPreparedImage(file ? decodeLocalProfileImage(file) : null); }} />
+        <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={waiting} onChange={(event) => setName(event.target.value)} />
+        <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required disabled={waiting} onChange={(event) => { const file = event.target.files?.[0] || null; setImage(file); setPreparedImage(file ? decodeLocalProfileImage(file) : null); }} />
         {pending && data.currentUser?.pendingImageReceived && !image && <span className="pending-image-note">Profile image received</span>}
-        <button className="plain-action" disabled={busy || pending} type="submit">{buttonLabel}</button>
+        <button className="plain-action" disabled={busy || waiting} type="submit">{buttonLabel}</button>
         {(localError || error) && <span className="plain-error">{localError || error}</span>}
       </form>
     </main>
