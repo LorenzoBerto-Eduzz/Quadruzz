@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Settings, X } from 'lucide-react';
 import type { WorkspacePayload } from '@/lib/workspace-types';
 
-const SYNC_INTERVAL_MS = 250;
+const SYNC_INTERVAL_MS = 1_000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const decodedProfileImages = new Map<string, HTMLImageElement>();
 const pendingProfileImages = new Map<string, Promise<void>>();
@@ -50,9 +50,13 @@ async function readPayload(response: Response, fallback: string): Promise<Worksp
   return data;
 }
 
-async function workspaceApi(init?: RequestInit, presenceSessionId?: string): Promise<WorkspacePayload> {
-  const url = presenceSessionId ? `/api/workspace?presenceSessionId=${encodeURIComponent(presenceSessionId)}` : '/api/workspace';
-  return readPayload(await fetch(url, { ...init, cache: 'no-store' }), 'Something went wrong.');
+async function workspaceApi(init?: RequestInit): Promise<WorkspacePayload> {
+  return readPayload(await fetch('/api/workspace', { ...init, cache: 'no-store' }), 'Something went wrong.');
+}
+
+function visibleError(cause: unknown, fallback: string): string {
+  const message = cause instanceof Error ? cause.message : fallback;
+  return /D1_ERROR|overloaded|queued for too long|database/i.test(message) ? fallback : message;
 }
 
 async function adminApi(action: string, userId: string): Promise<WorkspacePayload> {
@@ -82,13 +86,13 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     const epoch = requestEpoch.current;
     try {
       presenceSessionId.current ||= crypto.randomUUID();
-      const next = await prepareWorkspacePayload(await workspaceApi(undefined, presenceSessionId.current));
+      const next = await prepareWorkspacePayload(await workspaceApi());
       if (requestEpoch.current === epoch) {
         setData(next);
         setError('');
       }
     } catch (cause) {
-      if (requestEpoch.current === epoch) setError(cause instanceof Error ? cause.message : 'Workspace unavailable.');
+      // Background synchronization keeps the last good state instead of exposing infrastructure errors.
     }
   }, []);
 
@@ -98,7 +102,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     try {
       const next = await prepareWorkspacePayload(await workspaceApi({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...extra }) }));
       if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Request failed.'); }
+    } catch (cause) { setError(visibleError(cause, 'Request failed. Please try again.')); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -108,7 +112,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     try {
       const next = await prepareWorkspacePayload(await adminApi(action, userId));
       if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Request decision failed.'); }
+    } catch (cause) { setError(visibleError(cause, 'Request decision failed. Please try again.')); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -119,7 +123,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     try {
       const next = await prepareWorkspacePayload(await adminApi('remove_member', userId));
       if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Member removal failed.'); }
+    } catch (cause) { setError(visibleError(cause, 'Member removal failed. Please try again.')); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -145,7 +149,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
       if (serverImageUrl) void decodeProfileImage(serverImageUrl);
       if (requestEpoch.current === epoch) setData(next);
       return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Profile setup failed.'); return false; }
+    } catch (cause) { setError(visibleError(cause, 'Profile setup failed. Please try again.')); return false; }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -242,7 +246,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
       {settingsOpen && (
         <dialog ref={settingsRef} className="settings-popup" aria-label="Quadruzz settings" open>
 
-          <ProfileSettings key={data.currentUser?.displayName || ''} displayName={data.currentUser?.displayName || ''} saveProfile={saveProfile} busy={busy} />
+          <ProfileSettings key={data.currentUser?.displayName || ''} displayName={data.currentUser?.displayName || ''} saveProfile={saveProfile} closeSettings={() => setSettingsOpen(false)} busy={busy} />
           <button className="sign-out" type="button" disabled={busy} onClick={() => void signOut()}>Sign out</button>
           <div className="settings-divider" />
           <h3 className="members-title">Members</h3>
@@ -279,7 +283,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
   );
 }
 
-function ProfileSettings({ displayName, saveProfile, busy }: { displayName: string; saveProfile: (displayName: string, image: File | null) => Promise<void>; busy: boolean }) {
+function ProfileSettings({ displayName, saveProfile, closeSettings, busy }: { displayName: string; saveProfile: (displayName: string, image: File | null) => Promise<void>; closeSettings: () => void; busy: boolean }) {
   const [name, setName] = useState(displayName);
   const [image, setImage] = useState<File | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -294,7 +298,10 @@ function ProfileSettings({ displayName, saveProfile, busy }: { displayName: stri
 
   return (
     <form className="profile-settings" onSubmit={(event) => void submit(event)}>
-      <h3>You</h3>
+      <div className="profile-settings-heading">
+        <h3>You</h3>
+        <button className="settings-close" type="button" aria-label="Close settings" title="Close" onClick={closeSettings}><X aria-hidden="true" /></button>
+      </div>
       <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} />
       <input ref={fileInput} aria-label="New profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => setImage(event.target.files?.[0] || null)} />
       <button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</button>

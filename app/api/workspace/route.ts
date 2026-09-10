@@ -17,16 +17,11 @@ async function touchPresence(userId: string, sessionId: string, now: number) {
   ]);
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   const user = await getChatGPTUser();
   if (!user) return reply({ error: 'Authentication required.' }, 401);
   try {
     await ensureConfiguredHost(user);
-    const sessionId = new URL(request.url).searchParams.get('presenceSessionId');
-    if (validPresenceSessionId(sessionId)) {
-      try { await requireApproved(user.userId); await touchPresence(user.userId, sessionId, Date.now()); }
-      catch { /* Unapproved visitors do not create presence sessions. */ }
-    }
     return reply(await getWorkspacePayload(user));
   } catch (error) { return reply({ error: error instanceof Error ? error.message : 'Workspace unavailable.' }, 503); }
 }
