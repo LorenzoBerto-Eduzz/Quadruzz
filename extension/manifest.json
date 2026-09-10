@@ -1,0 +1,1 @@
+{"manifest_version":3,"name":"Quadruzz Companion","version":"0.1.0","description":"See your Quadruzz members from anywhere in Chrome.","action":{"default_title":"Quadruzz","default_popup":"popup.html"},"permissions":["storage","tabs"],"host_permissions":["https://cross-quadruzz.l-busslerberto.chatgpt.site/*"]}

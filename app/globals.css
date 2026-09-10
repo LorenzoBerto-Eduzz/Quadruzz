@@ -74,4 +74,8 @@ button, input { font: inherit; }
 .activity-list li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-list time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .activity-empty { margin: 0; padding: .75rem; color: var(--muted); text-align: center; font-size: .875rem; }
+.extension-connect { display: grid; width: min(100%, 22rem); gap: 1rem; margin: 12vh auto 0; padding: 1.5rem; text-align: center; }
+.extension-connect h1, .extension-connect p { margin: 0; }
+.extension-connect small { color: var(--muted); }
+.pairing-code { border: 1px solid rgba(255,255,255,.25); border-radius: .55rem; background: rgba(255,255,255,.06); color: var(--ink); padding: .8rem; font: 600 1.45rem/1 monospace; letter-spacing: .16em; cursor: pointer; }
 .gear-dot { position: absolute; top: -.1rem; right: -.1rem; width: .65rem; height: .65rem; border: 2px solid var(--canvas); border-radius: 50%; background: #f2d17b; }
