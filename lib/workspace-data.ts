@@ -9,13 +9,12 @@ let nextExpiredRequestCleanupAt = 0;
 type MemberRow = { user_id: string; email: string; role: Role; status: string; join_order: number; display_name: string | null; profile_image_key: string | null; last_seen_at: number | null; updated_at: number; online?: number };
 type RequestRow = { status: string; display_name: string | null; profile_image_key: string | null; expires_at: number | null };
 
-async function finishPendingTestReset(hostUserId: string): Promise<void> {
+async function finishPendingTestReset(): Promise<void> {
   const db = getDb();
   const pending = await db.prepare("SELECT value FROM board_state WHERE key='test_reset_pending'").first<{value: string}>();
   if (!pending) return;
   const objects = await getFiles().list({ prefix: 'profiles/' });
-  const hostPrefix = `profiles/${hostUserId}/`;
-  const keys = objects.objects.map((item) => item.key).filter((key) => !key.startsWith(hostPrefix));
+  const keys = objects.objects.map((item) => item.key);
   if (keys.length) await getFiles().delete(keys);
   const pendingObjects = await getFiles().list({ prefix: 'pending-profiles/' });
   const pendingKeys = pendingObjects.objects.map((item) => item.key);
@@ -41,7 +40,7 @@ export async function ensureConfiguredHost(user: ChatGPTUser): Promise<void> {
   const hostId = configuredHostUserId();
   if (!hostId || hostId !== user.userId) return;
   const db = getDb();
-  await finishPendingTestReset(user.userId);
+  await finishPendingTestReset();
   const existing = await db.prepare('SELECT email,role,status FROM members WHERE user_id=?').bind(user.userId).first<{email: string; role: Role; status: string}>();
   if (existing?.email === user.email && existing.role === 'host' && existing.status === 'approved') return;
   const now = Date.now();
