@@ -1,9 +1,8 @@
 import { getDb, getFiles, configuredHostUserId } from '@/db';
 import type { ChatGPTUser } from '@/app/chatgpt-auth';
-import { expireStalePresence, listActivity } from '@/lib/activity-log';
+import { expireStalePresence, listActivity, STALE_PRESENCE_AFTER_MS } from '@/lib/activity-log';
 import type { PendingRequest, PublicMember, Role, WorkspacePayload } from '@/lib/workspace-types';
 
-const STALE_PRESENCE_AFTER_MS = 45_000;
 const REQUEST_TTL_MS = 24 * 60 * 60_000;
 let nextExpiredRequestCleanupAt = 0;
 
