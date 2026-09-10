@@ -36,3 +36,10 @@ export const presenceSessions = sqliteTable('presence_sessions', {
   userId: text('user_id').notNull(),
   lastSeenAt: integer('last_seen_at').notNull(),
 }, (table) => [index('presence_sessions_user_seen_idx').on(table.userId, table.lastSeenAt)]);
+
+export const activityLog = sqliteTable('activity_log', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  message: text('message').notNull(),
+  createdAt: integer('created_at').notNull(),
+  dedupeKey: text('dedupe_key').unique(),
+}, (table) => [index('activity_log_created_idx').on(table.createdAt)]);

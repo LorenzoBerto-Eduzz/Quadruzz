@@ -1,6 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
 import { ensureConfiguredHost, getWorkspacePayload, pendingRequestExpiresAt, requireApproved } from '@/lib/workspace-data';
+import { recordActivity } from '@/lib/activity-log';
 
 export const dynamic = 'force-dynamic';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -45,11 +46,13 @@ export async function POST(request: Request) {
       const now = Date.now();
       if (member) {
         await db.prepare('UPDATE members SET display_name=?,profile_image_key=?,last_seen_at=?,updated_at=? WHERE user_id=?').bind(displayName, key, now, now, user.userId).run();
+        await recordActivity(member.profile_image_key ? `${displayName} updated their profile` : `${displayName} completed their profile`, now);
       } else {
         await db.prepare(`INSERT INTO access_requests (user_id,email,status,requested_at,decided_at,decided_by,display_name,profile_image_key,expires_at)
           VALUES (?,?,'pending',?,NULL,NULL,?,?,?)
           ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,status='pending',requested_at=excluded.requested_at,decided_at=NULL,decided_by=NULL,display_name=excluded.display_name,profile_image_key=excluded.profile_image_key,expires_at=excluded.expires_at`)
           .bind(user.userId, user.email, now, displayName, key, pendingRequestExpiresAt(now)).run();
+        await recordActivity(`${displayName} requested access`, now);
       }
     } catch (error) {
       await files.delete(key);

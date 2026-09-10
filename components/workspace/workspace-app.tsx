@@ -71,12 +71,18 @@ function ProfileImage({ src, className, title }: { src: string; className?: stri
   const [readyUrl, setReadyUrl] = useState<string | null>(() => decodedProfileImages.has(src) ? src : null);
   return <img className={className} src={src} alt="" title={title} decoding="sync" loading="eager" style={{ visibility: readyUrl === src ? 'visible' : 'hidden' }} onLoad={() => setReadyUrl(src)} onError={() => setReadyUrl(null)} />;
 }
+
+function activityTime(createdAt: number): string {
+  return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(createdAt));
+}
+
 export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload }) {
   const [data, setData] = useState<WorkspacePayload>(initialData);
   const [peopleReady, setPeopleReady] = useState(initialData.accessState !== 'approved' || !initialData.members.some((member) => member.online));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const requestEpoch = useRef(0);
   const presenceSessionId = useRef<string | null>(null);
   const settingsRef = useRef<HTMLDialogElement>(null);
@@ -271,6 +277,19 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
               </li>
             ))}
           </ul>
+          <div className="settings-divider" />
+          <button className="activity-toggle" type="button" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}>Log</button>
+          {activityOpen && (
+            <section className="activity-panel" aria-label="Recent activity">
+              {data.activity.length ? (
+                <ul className="activity-list">
+                  {data.activity.map((entry) => (
+                    <li key={entry.id}><span>{entry.message}</span><time dateTime={new Date(entry.createdAt).toISOString()}>{activityTime(entry.createdAt)}</time></li>
+                  ))}
+                </ul>
+              ) : <p className="activity-empty">No activity yet</p>}
+            </section>
+          )}
           {error && <p className="plain-error">{error}</p>}
         </dialog>
       )}
