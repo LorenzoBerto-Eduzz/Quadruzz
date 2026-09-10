@@ -7,6 +7,11 @@ body { background: var(--blue); color: var(--ink); font-family: Arial, Helvetica
 button, input { font: inherit; }
 
 .gate, .quadro { min-height: 100vh; background: var(--blue); }
+.site-loading { display: grid; min-height: 100vh; place-items: center; background: var(--blue); }
+.site-loading-spinner { width: 1.5rem; height: 1.5rem; border: 2px solid rgba(255,255,255,.18); border-top-color: var(--ink); border-radius: 50%; animation: site-loading-spin .8s linear infinite; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+@keyframes site-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .site-loading-spinner { animation: none; border-color: rgba(255,255,255,.38); } }
 .gate { display: grid; place-content: center; gap: 1rem; padding: 1.5rem; text-align: center; }
 .plain-action { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; padding: .65rem 1rem; border: 1px solid rgba(255,255,255,.28); border-radius: .55rem; background: transparent; color: var(--ink); cursor: pointer; text-decoration: none; }
 .plain-action:hover { background: rgba(255,255,255,.06); }
