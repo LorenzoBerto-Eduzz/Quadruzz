@@ -2,7 +2,10 @@ import { getDb } from '@/db';
 import type { ActivityEntry } from '@/lib/workspace-types';
 
 const ACTIVITY_LIMIT = 30;
-const STALE_PRESENCE_AFTER_MS = 45_000;
+// Hidden Chrome tabs may only receive timer time about once per minute. Actual tab
+// closes are sent immediately; this fallback is deliberately longer to avoid
+// turning healthy background tabs offline between throttled heartbeats.
+const STALE_PRESENCE_AFTER_MS = 150_000;
 
 export async function recordActivity(message: string, createdAt = Date.now(), dedupeKey: string | null = null): Promise<void> {
   const db = getDb();
