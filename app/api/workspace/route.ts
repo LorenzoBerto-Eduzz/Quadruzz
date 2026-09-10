@@ -13,7 +13,7 @@ function validPresenceSessionId(value: string | null | undefined): value is stri
 async function touchPresence(userId: string, sessionId: string, now: number) {
   await getDb().batch([
     getDb().prepare('INSERT INTO presence_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(sessionId, userId, now),
-    getDb().prepare('DELETE FROM presence_sessions WHERE last_seen_at<?').bind(now - 5 * 60_000),
+    getDb().prepare('DELETE FROM presence_sessions WHERE last_seen_at<?').bind(now - 45_000),
   ]);
 }
 

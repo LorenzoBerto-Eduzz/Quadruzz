@@ -191,8 +191,15 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
       catch { /* The stale-session cutoff covers lost connectivity. */ }
     };
     const leave = () => {
-      const body = new Blob([JSON.stringify({ action: 'leave', presenceSessionId: sessionId })], { type: 'application/json' });
-      navigator.sendBeacon('/api/workspace', body);
+      const payload = JSON.stringify({ action: 'leave', presenceSessionId: sessionId });
+      void fetch('/api/workspace', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: payload,
+        cache: 'no-store',
+        keepalive: true,
+      }).catch(() => undefined);
+      navigator.sendBeacon('/api/workspace', new Blob([payload], { type: 'application/json' }));
     };
     const resume = () => { if (document.visibilityState === 'visible') void pulse(); };
     void pulse();

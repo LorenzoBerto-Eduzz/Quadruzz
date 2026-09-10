@@ -2,7 +2,7 @@ import { getDb, getFiles, configuredHostUserId } from '@/db';
 import type { ChatGPTUser } from '@/app/chatgpt-auth';
 import type { PendingRequest, PublicMember, Role, WorkspacePayload } from '@/lib/workspace-types';
 
-const STALE_PRESENCE_AFTER_MS = 5 * 60_000;
+const STALE_PRESENCE_AFTER_MS = 45_000;
 const REQUEST_TTL_MS = 24 * 60 * 60_000;
 let nextExpiredRequestCleanupAt = 0;
 
