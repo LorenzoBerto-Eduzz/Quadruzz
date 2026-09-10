@@ -68,8 +68,7 @@ async function adminApi(action: string, userId: string): Promise<WorkspacePayloa
 }
 
 function ProfileImage({ src, className, title }: { src: string; className?: string; title?: string }) {
-  const [readyUrl, setReadyUrl] = useState<string | null>(() => decodedProfileImages.has(src) ? src : null);
-  return <img className={className} src={src} alt="" title={title} decoding="sync" loading="eager" style={{ visibility: readyUrl === src ? 'visible' : 'hidden' }} onLoad={() => setReadyUrl(src)} onError={() => setReadyUrl(null)} />;
+  return <img className={className} src={src} alt="" title={title} decoding="sync" loading="eager" />;
 }
 
 function activityTime(createdAt: number): string {
