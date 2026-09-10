@@ -38,7 +38,7 @@ function decodeProfileImage(url: string): Promise<void> {
 
 async function prepareWorkspacePayload(payload: WorkspacePayload): Promise<WorkspacePayload> {
   const visibleUrls = payload.members.filter((member) => member.online).map((member) => member.imageUrl);
-  await Promise.allSettled(visibleUrls.map((url) => decodeProfileImage(url)));
+  void Promise.allSettled(visibleUrls.map((url) => decodeProfileImage(url)));
   const backgroundUrls = payload.members.filter((member) => !member.online).map((member) => member.imageUrl);
   void Promise.allSettled(backgroundUrls.map((url) => decodeProfileImage(url)));
   return payload;
@@ -97,7 +97,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
         setData(next);
         setError('');
       }
-    } catch (cause) {
+    } catch {
       // Background synchronization keeps the last good state instead of exposing infrastructure errors.
     }
   }, []);
@@ -192,6 +192,19 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     timer = window.setTimeout(() => void synchronize(), SYNC_INTERVAL_MS);
     return () => { cancelled = true; if (timer !== undefined) window.clearTimeout(timer); };
   }, [accessState, busy, refresh]);
+  useEffect(() => {
+    const synchronizeVisiblePage = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    window.addEventListener('focus', synchronizeVisiblePage);
+    window.addEventListener('pageshow', synchronizeVisiblePage);
+    document.addEventListener('visibilitychange', synchronizeVisiblePage);
+    return () => {
+      window.removeEventListener('focus', synchronizeVisiblePage);
+      window.removeEventListener('pageshow', synchronizeVisiblePage);
+      document.removeEventListener('visibilitychange', synchronizeVisiblePage);
+    };
+  }, [refresh]);
   useEffect(() => {
     if (data?.accessState !== 'approved') return;
     presenceSessionId.current ||= crypto.randomUUID();
