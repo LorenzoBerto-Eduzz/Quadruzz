@@ -35,7 +35,7 @@ export async function markOnline(userId: string, sessionId: string, displayName:
   await db.batch([
     db.prepare(`INSERT OR IGNORE INTO activity_log (message,created_at,dedupe_key)
       SELECT ?,?,? WHERE NOT EXISTS (SELECT 1 FROM presence_sessions WHERE user_id=? AND last_seen_at>=?)`)
-      .bind(`${displayName} came online — Quadruzz opened`, now, `presence-online:${userId}:${sessionId}`, userId, now - STALE_PRESENCE_AFTER_MS),
+      .bind(`${displayName} came online — Quadruzz opened`, now, `presence-online:${userId}:${sessionId}:${now}`, userId, now - STALE_PRESENCE_AFTER_MS),
     db.prepare('INSERT INTO presence_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(sessionId, userId, now),
     db.prepare('DELETE FROM activity_log WHERE id NOT IN (SELECT id FROM activity_log ORDER BY created_at DESC,id DESC LIMIT ?)').bind(ACTIVITY_LIMIT),
   ]);
