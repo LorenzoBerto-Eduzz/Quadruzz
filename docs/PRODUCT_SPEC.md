@@ -9,12 +9,12 @@ This document records settled product behavior and the current implementation bo
 - The source repository remains local. Preserve the existing Sites project ID in `project/.openai/hosting.json`.
 - Do not deploy without explicit owner authorization.
 
-## Deferred Quadruzz Companion
+## Quadruzz Companion
 
-- **Quadruzz Companion** is the settled future browser product: one global Chrome extension designed from the outset to support multiple Quadruzz instances. **Cross** is the initial instance, not a separate extension.
-- Distribute the extension as an **unlisted Chrome Web Store item** when implementation is authorized. It is not searchable and remains free to members, although the publisher pays Google's one-time developer registration fee. Installation is an explicit browser-approved user action initiated from the Quadruzz dashboard. Do not build or package it yet; continue developing the hosted page first.
-- The extension will provide three Chrome surfaces: a toolbar popup, a persistent side panel usable beside any tab, and native browser notifications.
-- Pairing must begin through the authenticated Quadruzz website and bind the installed extension securely to the stable authenticated OpenAI user ID. A browser profile, device, IP address, display name, or possession of an extension install is not an identity or authorization boundary.
+- **Quadruzz Companion** is now the primary daily browser surface. Cross is its initial instance; the architecture may later grow into one global multi-instance extension.
+- The current unpacked build is in `project/extension/`. It injects a persistent floating top-right overlay into the focused ordinary tab. The toolbar action and Alt+Shift+W toggle it; switching tabs transfers the visible overlay to the focused tab, and hidden mode keeps the extension active for future notifications.
+- Distribute it as an **unlisted Chrome Web Store item** after local testing and explicit authorization.
+- Authorization begins through the authenticated Cross website and binds a revocable extension credential to the stable authenticated OpenAI user ID. Browser profile, device, IP address, display name, or possession of the files is not identity or authorization.
 - Extension clients must use live backend data and the same server-enforced access rules as the hosted page. Never create a parallel client-authoritative permission model or treat locally cached state as authority.
 - Local extension storage is limited to non-authoritative device preferences, such as presentation or convenience settings. Membership, roles, approval state, profiles, shared content, notification eligibility, and revocation state remain server-authoritative.
 - Removing a member, revoking a pairing, or otherwise withdrawing access must invalidate extension access. A previously paired installation must not retain access merely because it still has local data or credentials.
@@ -54,10 +54,10 @@ The host cannot be removed and never needs approval. Members may manage requests
 - Removing a member revokes their access, clears their profile image and profile fields, and requires that same OpenAI account to request and receive approval again before re-entering.
 - The host account cannot be removed.
 - Settings also support profile reset/deletion and sign-out.
-- Presence is tied to open authenticated workspace tabs, never to window focus or tab visibility.
-- Sign-out explicitly clears every presence session for that authenticated account before navigating to ChatGPT sign-out, so other open viewers remove its circle on their next synchronization check.
-- Give every open tab its own presence session. Send heartbeats every 15 seconds, remove that session promptly when the tab closes, and keep a five-minute stale-session cutoff only as a safety fallback for crashes, lost connectivity, or missing close events. A member is present while any one of their tab sessions remains active.
-- Keep presence heartbeats independent from visible-state synchronization.
+- Canonical activity is tied to an authorized Companion running in the browser, not to an open/focused HQ page and not to overlay visibility.
+- Approved Companion-active members are vivid and sorted first in join order. All other approved members remain listed afterward and dimmed.
+- Successful authenticated Companion member-list reads count as activity and renew a D1 extension session when needed. This read-as-proof rule is required because Chrome can suspend Manifest V3 service workers and suppress separate background heartbeat POSTs. Popup/background heartbeat POSTs remain redundant fallbacks.
+- Extension activity expires after 90 seconds without authenticated Companion traffic.
 - While a relevant page is open, synchronize access requests, approvals, membership/profile changes, presence displays, and later board mutations about four times per second without overlapping requests.
 - Every signed-in door state must keep synchronizing while the page remains open, including a temporary `not_requested` response. Workspace reads and responses must disable HTTP caching so stale door payloads cannot suppress an approval transition; an approved account must enter the board automatically without refreshing. The acting browser applies successful mutation responses immediately; other browsers converge on the next synchronization check.
 - This low-latency rule applies globally to every shared mutation: requests, approval transitions, presence, profiles, roles, settings, colors, images, elements, and later dragging/coordinates. Use immediate mutation responses for the actor and the shared 250 ms synchronization path for everyone else. Keep server-authoritative timestamps/versions and non-overlapping requests so stale responses cannot overwrite newer state.
@@ -66,7 +66,7 @@ The host cannot be removed and never needs approval. Members may manage requests
 - A newly visible or changed profile image must be downloaded and decoded before its member payload is committed to the visible board. Layout rearrangement and the fully rendered circle should appear together; never expose progressive top-to-bottom image painting or an empty reserved circle.
 - Profile images use empty alternative text and hide themselves on load failure, so a browser never substitutes a member name or broken-image icon inside a circle. A failed circle stays out until a valid version is ready.
 - Every profile image, including images inside the settings member list, remains invisible until its complete image load fires; progressive top-to-bottom painting is never shown.
-- Render the authenticated workspace payload in the original server response rather than sending an empty client shell followed by a second data request. Optimistically include the authenticated approved member as present in that first payload, then register the tab session immediately after hydration. Begin visible profile-image downloads from the server-rendered HTML, keep the group hidden only until all visible circles decode, and reveal them together; preload offline member images in the background.
+- Render the authenticated workspace payload in the original server response rather than sending an empty client shell followed by a second data request. Use canonical extension activity for ordering/dimming. Begin visible profile-image downloads from server-rendered HTML, reveal them together after decode, and preload inactive member images in the background.
 - Decode the selected door profile image locally before submission when possible. After the server confirms the upload, use that ready local image for the entering member immediately while the versioned R2 image decodes in the background; switch only after the permanent server image is ready.
 - Profile-image URLs must carry a server-derived version so a changed image cannot be masked by a stale browser cache.
 - Profile reset/deletion must preserve the stable-ID, permanent-host, and authorization invariants.
@@ -87,7 +87,7 @@ The host cannot be removed and never needs approval. Members may manage requests
 
 ## Current Implementation And Repository Status
 
-- Cross-Quadruzz authentication, access requests, membership/profile storage, presence, the minimal board, the functional settings approval popup, and clean root routing are implemented and deployed. Low-latency synchronization and faster profile onboarding are deployed. The active slice combines profile creation with access requests, directly creates completed profiles on approval, retains pending profiles for 24 hours, and unifies requests with the member list.
+- Cross-Quadruzz authentication, access requests, membership/profile storage, activity log, minimal board, settings workflow, clean routing, and the local Companion overlay are implemented. The Site and Companion share D1/R2 data and server authorization. Companion activity is the canonical member activity state.
 - The live Site uses the minimal pale muted dark-blue board and direct authenticated entry; the former test screen and redundant Continue entrance are gone.
 - Git is initialized on `main` with clone-local identity `Lo <lorenzo.berto@eduzz.com>` and the identity guard enabled.
 - Dependencies are installed; the setup verifier and production build passed.
