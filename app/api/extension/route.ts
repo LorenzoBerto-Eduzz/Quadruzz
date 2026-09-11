@@ -18,13 +18,14 @@ export async function GET(request: Request) {
     const now = Date.now();
     await expireStaleExtensionSessions(now);
     const db = getDb();
-    const members = (await db.prepare(`SELECT m.user_id AS userId,m.display_name AS displayName,m.updated_at AS imageVersion,m.acting_state AS actingState,m.note,EXISTS(SELECT 1 FROM extension_sessions e WHERE e.user_id=m.user_id AND e.last_seen_at>=?) AS extensionActive FROM members m WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL ORDER BY extensionActive DESC,m.join_order ASC`).bind(now - EXTENSION_ACTIVE_AFTER_MS).all()).results as Array<Record<string, unknown>>;
+    const members = (await db.prepare(`SELECT m.user_id AS userId,m.display_name AS displayName,m.updated_at AS imageVersion,m.acting_state AS actingState,m.note,MAX(e.last_seen_at) AS extensionLastSeen,MAX(CASE WHEN e.last_seen_at>=? THEN 1 ELSE 0 END) AS extensionActive FROM members m LEFT JOIN extension_sessions e ON e.user_id=m.user_id WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL GROUP BY m.user_id ORDER BY extensionActive DESC,m.join_order ASC`).bind(now - EXTENSION_ACTIVE_AFTER_MS).all()).results as Array<Record<string, unknown>>;
     const viewer = members.find((member) => member.userId === userId);
-    if (viewer && !viewer.extensionActive) {
+    if (viewer && Number(viewer.extensionLastSeen || 0) < now - 30_000) {
       await db.prepare('INSERT INTO extension_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(`reader:${userId}`, userId, now).run();
       viewer.extensionActive = 1;
       members.sort((a, b) => Number(Boolean(b.extensionActive)) - Number(Boolean(a.extensionActive)));
     }
+    for (const member of members) delete member.extensionLastSeen;
     return reply({ currentUserId: userId, members });
   } catch { return reply({ error: 'Quadruzz is temporarily unavailable.' }, 503); }
 }
