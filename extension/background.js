@@ -29,8 +29,9 @@ async function synchronizeActivity() {
 }
 
 async function startActivityHeartbeat() {
-  await chrome.alarms.create(ACTIVITY_ALARM, { periodInMinutes: 0.5 });
   await synchronizeActivity();
+  try { await chrome.alarms.create(ACTIVITY_ALARM, { periodInMinutes: 0.5 }); }
+  catch { await chrome.alarms.create(ACTIVITY_ALARM, { periodInMinutes: 1 }); }
 }
 
 async function toggle(tab) {
