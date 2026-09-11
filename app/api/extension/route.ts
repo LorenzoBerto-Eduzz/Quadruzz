@@ -1,11 +1,14 @@
 import { getDb } from '@/db';
 import { authenticateExtension } from '@/lib/extension-auth';
-import { expireStalePresence, STALE_PRESENCE_AFTER_MS } from '@/lib/activity-log';
+import { expireStalePresence, markOnline, markSessionClosed, STALE_PRESENCE_AFTER_MS } from '@/lib/activity-log';
 
 export const dynamic = 'force-dynamic';
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'cache-control': 'no-store, max-age=0' };
 const reply = (data: unknown, status = 200) => Response.json(data, { status, headers: cors });
 export function OPTIONS() { return new Response(null, { status: 204, headers: cors }); }
+function validPresenceSessionId(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^[a-zA-Z0-9-]{16,80}$/.test(value);
+}
 
 export async function GET(request: Request) {
   try {
@@ -22,7 +25,17 @@ export async function POST(request: Request) {
   try {
     const userId = await authenticateExtension(request);
     if (!userId) return reply({ error: 'Extension authorization required.' }, 401);
-    const body = await request.json() as { actingState?: string; note?: string | null };
+    const body = await request.json() as { actingState?: string; note?: string | null; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
+    if (body.presenceAction) {
+      const sessionId = body.presenceSessionId?.trim();
+      if (!validPresenceSessionId(sessionId)) return reply({ error: 'Invalid presence session.' }, 400);
+      const member = await getDb().prepare("SELECT display_name FROM members WHERE user_id=? AND status='approved'").bind(userId).first<{ display_name: string | null }>();
+      if (!member) return reply({ error: 'Approved membership required.' }, 403);
+      const now = Date.now();
+      if (body.presenceAction === 'heartbeat') await markOnline(userId, sessionId, member.display_name || 'Member', now);
+      else await markSessionClosed(userId, sessionId, member.display_name || 'Member', now);
+      return reply({ ok: true });
+    }
     if (body.actingState !== undefined && body.actingState !== 'chat' && body.actingState !== 'ticket') return reply({ error: 'Invalid acting state.' }, 400);
     const note = body.note === undefined ? undefined : body.note?.trim() || null;
     if (note && note.length > 280) return reply({ error: 'Note must be 280 characters or fewer.' }, 400);
