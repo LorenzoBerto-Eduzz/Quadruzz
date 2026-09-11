@@ -22,6 +22,7 @@ button, input { font: inherit; }
 .people { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
 .people-loading { visibility: hidden; }
 .person { width: clamp(3.5rem, 8vw, 5rem); height: clamp(3.5rem, 8vw, 5rem); border-radius: 50%; object-fit: cover; }
+.person-inactive { opacity: .32; filter: grayscale(1) saturate(.15); }
 .gear { position: fixed; left: 1rem; bottom: 1rem; display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: rgba(0,0,0,.08); color: var(--ink); cursor: pointer; }
 .gear svg { width: 1.1rem; height: 1.1rem; }
 .profile-setup { display: grid; width: min(100%, 20rem); gap: .75rem; text-align: left; }

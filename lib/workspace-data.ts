@@ -1,12 +1,13 @@
 import { getDb, getFiles, configuredHostUserId } from '@/db';
 import type { ChatGPTUser } from '@/app/chatgpt-auth';
-import { expireStalePresence, listActivity, STALE_PRESENCE_AFTER_MS } from '@/lib/activity-log';
+import { listActivity } from '@/lib/activity-log';
+import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS } from '@/lib/extension-activity';
 import type { PendingRequest, PublicMember, Role, WorkspacePayload } from '@/lib/workspace-types';
 
 const REQUEST_TTL_MS = 24 * 60 * 60_000;
 let nextExpiredRequestCleanupAt = 0;
 
-type MemberRow = { user_id: string; email: string; role: Role; status: string; join_order: number; display_name: string | null; profile_image_key: string | null; last_seen_at: number | null; updated_at: number; online?: number };
+type MemberRow = { user_id: string; email: string; role: Role; status: string; join_order: number; display_name: string | null; profile_image_key: string | null; last_seen_at: number | null; updated_at: number; extension_active?: number };
 type RequestRow = { status: string; display_name: string | null; profile_image_key: string | null; expires_at: number | null };
 
 async function finishPendingTestReset(): Promise<void> {
@@ -65,9 +66,9 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   const currentUser = { userId: member.user_id, email: member.email, role: member.role, displayName: member.display_name, imageUrl: member.profile_image_key ? '/api/profile-image' : null };
   if (!member.display_name || !member.profile_image_key) return { ...base, accessState: 'onboarding', currentUser };
 
-  await expireStalePresence(now);
-  const rows = (await db.prepare("SELECT m.user_id,m.email,m.role,m.status,m.join_order,m.display_name,m.profile_image_key,m.last_seen_at,m.updated_at,EXISTS(SELECT 1 FROM presence_sessions p WHERE p.user_id=m.user_id AND p.last_seen_at>=?) AS online FROM members m WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL ORDER BY m.join_order ASC").bind(now - STALE_PRESENCE_AFTER_MS).all<MemberRow>()).results;
-  const members: PublicMember[] = rows.map((row) => ({ userId: row.user_id, displayName: row.display_name!, joinOrder: row.join_order, online: row.user_id === user.userId || row.online === 1, imageUrl: `/api/profile-image?user=${encodeURIComponent(row.user_id)}&v=${row.updated_at}`, canRemove: member.role === 'host' && row.role !== 'host' && row.user_id !== member.user_id }));
+  await expireStaleExtensionSessions(now);
+  const rows = (await db.prepare("SELECT m.user_id,m.email,m.role,m.status,m.join_order,m.display_name,m.profile_image_key,m.last_seen_at,m.updated_at,EXISTS(SELECT 1 FROM extension_sessions e WHERE e.user_id=m.user_id AND e.last_seen_at>=?) AS extension_active FROM members m WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL ORDER BY extension_active DESC,m.join_order ASC").bind(now - EXTENSION_ACTIVE_AFTER_MS).all<MemberRow>()).results;
+  const members: PublicMember[] = rows.map((row) => ({ userId: row.user_id, displayName: row.display_name!, joinOrder: row.join_order, extensionActive: row.extension_active === 1, imageUrl: `/api/profile-image?user=${encodeURIComponent(row.user_id)}&v=${row.updated_at}`, canRemove: member.role === 'host' && row.role !== 'host' && row.user_id !== member.user_id }));
   const requests = (await db.prepare("SELECT user_id AS userId,email,requested_at AS requestedAt FROM access_requests WHERE status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>? ORDER BY requested_at ASC").bind(now).all<PendingRequest>()).results;
   const board = await db.prepare("SELECT value FROM board_state WHERE key='title'").first<{value: string}>();
   const activity = await listActivity();

@@ -13,10 +13,5 @@ export default async function Home() {
     redirect('/authentication');
   }
 
-  const workspace = await getWorkspacePayload(user);
-  const initialData = workspace.accessState === 'approved'
-    ? { ...workspace, members: workspace.members.map((member) => member.userId === user.userId ? { ...member, online: true } : member) }
-    : workspace;
-
-  return <WorkspaceApp initialData={initialData} />;
+  return <WorkspaceApp initialData={await getWorkspacePayload(user)} />;
 }

@@ -6,7 +6,7 @@ export type PublicMember = {
   displayName: string;
   canRemove: boolean;
   joinOrder: number;
-  online: boolean;
+  extensionActive: boolean;
   imageUrl: string;
 };
 

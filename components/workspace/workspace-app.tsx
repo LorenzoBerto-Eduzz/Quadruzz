@@ -6,7 +6,6 @@ import { Check, Settings, X } from 'lucide-react';
 import type { WorkspacePayload } from '@/lib/workspace-types';
 
 const SYNC_INTERVAL_MS = 1_000;
-const HEARTBEAT_INTERVAL_MS = 15_000;
 const decodedProfileImages = new Map<string, HTMLImageElement>();
 const pendingProfileImages = new Map<string, Promise<void>>();
 
@@ -37,9 +36,9 @@ function decodeProfileImage(url: string): Promise<void> {
 }
 
 async function prepareWorkspacePayload(payload: WorkspacePayload): Promise<WorkspacePayload> {
-  const visibleUrls = payload.members.filter((member) => member.online).map((member) => member.imageUrl);
+  const visibleUrls = payload.members.filter((member) => member.extensionActive).map((member) => member.imageUrl);
   void Promise.allSettled(visibleUrls.map((url) => decodeProfileImage(url)));
-  const backgroundUrls = payload.members.filter((member) => !member.online).map((member) => member.imageUrl);
+  const backgroundUrls = payload.members.filter((member) => !member.extensionActive).map((member) => member.imageUrl);
   void Promise.allSettled(backgroundUrls.map((url) => decodeProfileImage(url)));
   return payload;
 }
@@ -77,20 +76,18 @@ function activityTime(createdAt: number): string {
 
 export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload }) {
   const [data, setData] = useState<WorkspacePayload>(initialData);
-  const [peopleReady, setPeopleReady] = useState(initialData.accessState !== 'approved' || !initialData.members.some((member) => member.online));
+  const [peopleReady, setPeopleReady] = useState(initialData.accessState !== 'approved' || !initialData.members.length);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const requestEpoch = useRef(0);
-  const presenceSessionId = useRef<string | null>(null);
   const settingsRef = useRef<HTMLDialogElement>(null);
   const gearRef = useRef<HTMLButtonElement>(null);
 
   const refresh = useCallback(async () => {
     const epoch = requestEpoch.current;
     try {
-      presenceSessionId.current ||= crypto.randomUUID();
       const next = await prepareWorkspacePayload(await workspaceApi());
       if (requestEpoch.current === epoch) {
         setData(next);
@@ -173,7 +170,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
 
   useEffect(() => {
     let cancelled = false;
-    if (initialData.accessState === 'approved' && initialData.members.some((member) => member.online)) {
+    if (initialData.accessState === 'approved' && initialData.members.length) {
       void prepareWorkspacePayload(initialData).then(() => { if (!cancelled) setPeopleReady(true); });
     }
     const timer = window.setTimeout(() => void refresh(), 0);
@@ -205,40 +202,6 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     };
   }, [refresh]);
   useEffect(() => {
-    if (data?.accessState !== 'approved') return;
-    presenceSessionId.current ||= crypto.randomUUID();
-    const sessionId = presenceSessionId.current;
-    const pulse = async () => {
-      try { await fetch('/api/workspace', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'heartbeat', presenceSessionId: sessionId }), keepalive: true }); }
-      catch { /* The stale-session cutoff covers lost connectivity. */ }
-    };
-    const leave = () => {
-      const payload = JSON.stringify({ action: 'leave', presenceSessionId: sessionId });
-      void fetch('/api/workspace', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: payload,
-        cache: 'no-store',
-        keepalive: true,
-      }).catch(() => undefined);
-      navigator.sendBeacon('/api/workspace', new Blob([payload], { type: 'application/json' }));
-    };
-    const resume = () => { if (document.visibilityState === 'visible') void pulse(); };
-    void pulse();
-    const timer = window.setInterval(() => void pulse(), HEARTBEAT_INTERVAL_MS);
-    window.addEventListener('pagehide', leave);
-    window.addEventListener('pageshow', resume);
-    document.addEventListener('visibilitychange', resume);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('pagehide', leave);
-      window.removeEventListener('pageshow', resume);
-      document.removeEventListener('visibilitychange', resume);
-      leave();
-    };
-  }, [data?.accessState]);
-
-  useEffect(() => {
     if (!settingsOpen) return;
     const closeOutside = (event: PointerEvent) => {
       const target = event.target as Node;
@@ -252,12 +215,11 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} error={error} />;
   }
 
-  const presentMembers = data.members.filter((member) => member.online);
   return (
     <main className="quadro">
-      <div className={`people${peopleReady ? '' : ' people-loading'}`} aria-label="People currently present">
-        {presentMembers.map((member) => (
-          <ProfileImage className="person" src={member.imageUrl} title={member.displayName} key={member.userId} />
+      <div className={`people${peopleReady ? '' : ' people-loading'}`} aria-label="Quadruzz members">
+        {data.members.map((member) => (
+          <ProfileImage className={`person${member.extensionActive ? '' : ' person-inactive'}`} src={member.imageUrl} title={member.displayName} key={member.userId} />
         ))}
       </div>
 

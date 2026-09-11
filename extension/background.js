@@ -1,5 +1,5 @@
 const BASE = 'https://cross-quadruzz.l-busslerberto.chatgpt.site';
-const PRESENCE_ALARM = 'cross-quadruzz-presence';
+const ACTIVITY_ALARM = 'cross-quadruzz-activity';
 
 async function tell(tabId, type) {
   if (!tabId) return;
@@ -13,30 +13,24 @@ async function getState() {
 
 async function resetState() { await chrome.storage.session.set({ overlayVisible: false, activeTabId: null }); }
 
-async function synchronizePresence() {
+async function synchronizeActivity() {
   try {
-    const stored = await chrome.storage.local.get(['token', 'extensionActivitySessionId', 'presenceWatchdogSessionId']);
+    const stored = await chrome.storage.local.get(['token', 'extensionActivitySessionId']);
     if (!stored.token) return;
     const extensionSessionId = stored.extensionActivitySessionId || crypto.randomUUID();
-    const presenceSessionId = stored.presenceWatchdogSessionId || crypto.randomUUID();
-    if (!stored.extensionActivitySessionId || !stored.presenceWatchdogSessionId) await chrome.storage.local.set({ extensionActivitySessionId: extensionSessionId, presenceWatchdogSessionId: presenceSessionId });
-    const tabs = await chrome.tabs.query({ url: `${BASE}/*` });
-    const pageOpen = tabs.length > 0;
-    const previous = await chrome.storage.session.get('presenceWatchdogPageOpen');
-    const presenceAction = pageOpen ? 'heartbeat' : previous.presenceWatchdogPageOpen === false ? undefined : 'leave';
+    if (!stored.extensionActivitySessionId) await chrome.storage.local.set({ extensionActivitySessionId });
     const response = await fetch(`${BASE}/api/extension`, {
       method: 'POST',
       headers: { authorization: `Bearer ${stored.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId, presenceAction, presenceSessionId }),
+      body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId }),
     });
     if (response.status === 401) await chrome.storage.local.remove('token');
-    if (response.ok) await chrome.storage.session.set({ presenceWatchdogPageOpen: pageOpen });
   } catch { /* The next alarm retries transient browser or network failures. */ }
 }
 
-async function startPresenceWatchdog() {
-  await chrome.alarms.create(PRESENCE_ALARM, { periodInMinutes: 0.5 });
-  await synchronizePresence();
+async function startActivityHeartbeat() {
+  await chrome.alarms.create(ACTIVITY_ALARM, { periodInMinutes: 0.5 });
+  await synchronizeActivity();
 }
 
 async function toggle(tab) {
@@ -47,9 +41,9 @@ async function toggle(tab) {
   await tell(activeTabId, visible ? 'quadruzz-show' : 'quadruzz-hide');
 }
 
-chrome.runtime.onStartup.addListener(() => { void resetState(); void startPresenceWatchdog(); });
-chrome.runtime.onInstalled.addListener(() => { void resetState(); void startPresenceWatchdog(); });
-chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === PRESENCE_ALARM) void synchronizePresence(); });
+chrome.runtime.onStartup.addListener(() => { void resetState(); void startActivityHeartbeat(); });
+chrome.runtime.onInstalled.addListener(() => { void resetState(); void startActivityHeartbeat(); });
+chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === ACTIVITY_ALARM) void synchronizeActivity(); });
 chrome.action.onClicked.addListener(toggle);
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const state = await getState();
@@ -71,11 +65,9 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const state = await getState();
   if (state.visible && tab.active && changeInfo.status === 'complete') await tell(tabId, 'quadruzz-show');
-  if (changeInfo.url || changeInfo.status === 'complete') void synchronizePresence();
 });
-chrome.tabs.onRemoved.addListener(() => { void synchronizePresence(); });
 chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type === 'quadruzz-authenticated') void synchronizePresence();
+  if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
   if (message?.type === 'quadruzz-close') {
     void chrome.storage.session.set({ overlayVisible: false });
@@ -84,4 +76,4 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === 'quadruzz-shortcuts') void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 });
 
-void startPresenceWatchdog();
+void startActivityHeartbeat();
