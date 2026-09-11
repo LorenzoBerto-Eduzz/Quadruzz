@@ -12,7 +12,8 @@ This is the portable continuity note for AI coding sessions working on this repo
 - No automated test command is defined yet.
 - Preserve the existing Sites project ID, hosted connection, audience, and D1/R2 data. Standing owner authorization is active: requested Quadruzz development/fixes should be validated, committed, pushed, and deployed to the live Site automatically until the owner explicitly revokes this mode.
 - Preferred public hostname: `cross-quadruzz.l-busslerberto.chatgpt.site`, if available.
-- The source repository is connected to the existing Sites source remote; never persist short-lived source credentials.
+- The complete workspace is one Git repository rooted at `Quadruzz/`; `project/` is a normal tracked folder whose earlier Sites history was imported during consolidation.
+- Public GitHub remote: `https://github.com/LorenzoBerto-Eduzz/Quadruzz.git`. Never persist short-lived Sites source credentials.
 - Git is initialized on `main` with identity `Lo <lorenzo.berto@eduzz.com>` and the identity guard enabled.
 - Dependencies are installed; the setup verifier and production build passed.
 - Cross-Quadruzz authentication, access requests, D1/R2-backed membership and profiles, the minimal member board, settings/log popup, and the first local Companion extension are implemented. Companion activity is the canonical online state shared by the extension and Site.
@@ -67,6 +68,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 - `memcheck` updates durable memory only.
 - For Quadruzz, `gitcheck` performs `memcheck`, validation, identity verification, staging, commit, push, and deployment of that exact commit to the existing live Site unless the owner explicitly says not to deploy.
 - Local build verification does not authorize deployment.
+- For Sites delivery from this monorepo, stage the tracked `project/` source in an isolated temporary Git checkout rooted at the Site project, then use the normal Sites hosting flow. Do not recreate a persistent nested repository inside `project/`.
 
 ## Settled Door And Settings Flow (2026-09-09)
 

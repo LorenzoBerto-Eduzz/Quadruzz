@@ -25,7 +25,7 @@ Prefer official installation sources. Do not place credentials, license keys, pr
 ## First-Time Setup
 
 1. Install Node.js 22.13.0 or newer and Git.
-2. Clone or copy the repository using `docs/COPYING_AND_GIT.md`.
+2. Clone `https://github.com/LorenzoBerto-Eduzz/Quadruzz.git`.
 3. Configure the clone-local Git identity and identity guard as documented there.
 4. Run `npm install` from `project/`.
 5. Run `.\scripts\Test-ProjectSetup.ps1` from the repository root.
@@ -55,4 +55,5 @@ Project smoke test: cd project; npm run build
 
 - Do not run a Sites initializer over `project/`; it is a retained existing Site checkout.
 - Do not replace `project/.openai/hosting.json`; it contains the existing hosted-project connection.
+- `project/` is a normal folder in the single repository; do not initialize a persistent nested Git repository there.
 - Build output and local Wrangler state are generated and ignored.
