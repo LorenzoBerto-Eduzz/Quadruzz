@@ -15,21 +15,19 @@ async function resetState() { await chrome.storage.session.set({ overlayVisible:
 
 async function synchronizePresence() {
   try {
-    const stored = await chrome.storage.local.get(['token', 'presenceWatchdogSessionId']);
+    const stored = await chrome.storage.local.get(['token', 'extensionActivitySessionId', 'presenceWatchdogSessionId']);
     if (!stored.token) return;
-    let sessionId = stored.presenceWatchdogSessionId;
-    if (!sessionId) {
-      sessionId = crypto.randomUUID();
-      await chrome.storage.local.set({ presenceWatchdogSessionId: sessionId });
-    }
+    const extensionSessionId = stored.extensionActivitySessionId || crypto.randomUUID();
+    const presenceSessionId = stored.presenceWatchdogSessionId || crypto.randomUUID();
+    if (!stored.extensionActivitySessionId || !stored.presenceWatchdogSessionId) await chrome.storage.local.set({ extensionActivitySessionId: extensionSessionId, presenceWatchdogSessionId: presenceSessionId });
     const tabs = await chrome.tabs.query({ url: `${BASE}/*` });
     const pageOpen = tabs.length > 0;
     const previous = await chrome.storage.session.get('presenceWatchdogPageOpen');
-    if (!pageOpen && previous.presenceWatchdogPageOpen === false) return;
+    const presenceAction = pageOpen ? 'heartbeat' : previous.presenceWatchdogPageOpen === false ? undefined : 'leave';
     const response = await fetch(`${BASE}/api/extension`, {
       method: 'POST',
       headers: { authorization: `Bearer ${stored.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ presenceAction: pageOpen ? 'heartbeat' : 'leave', presenceSessionId: sessionId }),
+      body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId, presenceAction, presenceSessionId }),
     });
     if (response.status === 401) await chrome.storage.local.remove('token');
     if (response.ok) await chrome.storage.session.set({ presenceWatchdogPageOpen: pageOpen });
@@ -77,6 +75,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 chrome.tabs.onRemoved.addListener(() => { void synchronizePresence(); });
 chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type === 'quadruzz-authenticated') void synchronizePresence();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
   if (message?.type === 'quadruzz-close') {
     void chrome.storage.session.set({ overlayVisible: false });

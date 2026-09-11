@@ -53,3 +53,7 @@ export const extensionPairingCodes = sqliteTable('extension_pairing_codes', {
 export const extensionCredentials = sqliteTable('extension_credentials', {
   tokenHash: text('token_hash').primaryKey(), userId: text('user_id').notNull(), createdAt: integer('created_at').notNull(), lastUsedAt: integer('last_used_at').notNull(), revokedAt: integer('revoked_at'),
 }, (table) => [index('extension_credentials_user_idx').on(table.userId)]);
+
+export const extensionSessions = sqliteTable('extension_sessions', {
+  sessionId: text('session_id').primaryKey(), userId: text('user_id').notNull(), lastSeenAt: integer('last_seen_at').notNull(),
+}, (table) => [index('extension_sessions_user_seen_idx').on(table.userId, table.lastSeenAt)]);

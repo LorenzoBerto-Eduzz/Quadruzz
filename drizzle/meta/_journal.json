@@ -71,6 +71,13 @@
       "when": 1789065000000,
       "tag": "0009_member_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789143000000,
+      "tag": "0010_extension_activity",
+      "breakpoints": true
     }
   ]
 }
