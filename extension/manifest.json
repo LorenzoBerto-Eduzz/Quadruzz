@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Cross-Quadruzz",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Quick access to Cross-Quadruzz from any Chrome tab.",
   "action": { "default_title": "Toggle Cross-Quadruzz" },
   "background": { "service_worker": "background.js" },
