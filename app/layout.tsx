@@ -8,6 +8,10 @@ const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin']
 export const metadata: Metadata = {
   title: 'Cross-Quadruzz',
   description: 'A private shared workspace for the Cross-Quadruzz team.',
+  icons: {
+    icon: '/iconquadruzz-transparent.png',
+    shortcut: '/iconquadruzz-transparent.png',
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
