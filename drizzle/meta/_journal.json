@@ -64,6 +64,13 @@
       "when": 1789060000000,
       "tag": "0008_extension_pairing",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789065000000,
+      "tag": "0009_member_activity",
+      "breakpoints": true
     }
   ]
 }

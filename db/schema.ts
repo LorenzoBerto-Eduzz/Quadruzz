@@ -8,6 +8,8 @@ export const members = sqliteTable('members', {
   joinOrder: integer('join_order').notNull().unique(),
   displayName: text('display_name'),
   profileImageKey: text('profile_image_key'),
+  actingState: text('acting_state', { enum: ['chat', 'ticket'] }).notNull().default('chat'),
+  note: text('note'),
   lastSeenAt: integer('last_seen_at'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),

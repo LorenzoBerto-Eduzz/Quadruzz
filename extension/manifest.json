@@ -1,1 +1,13 @@
-{"manifest_version":3,"name":"Quadruzz Companion","version":"0.2.0","description":"See your Quadruzz members from anywhere in Chrome.","action":{"default_title":"Quadruzz","default_popup":"popup.html"},"permissions":["storage","identity"],"host_permissions":["https://cross-quadruzz.l-busslerberto.chatgpt.site/*"]}
+{
+  "manifest_version": 3,
+  "name": "Cross-Quadruzz",
+  "version": "0.3.0",
+  "description": "Quick access to Cross-Quadruzz from any Chrome tab.",
+  "action": { "default_title": "Toggle Cross-Quadruzz" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage", "identity", "tabs"],
+  "host_permissions": ["https://cross-quadruzz.l-busslerberto.chatgpt.site/*"],
+  "content_scripts": [{ "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle" }],
+  "web_accessible_resources": [{ "resources": ["popup.html", "popup.css", "popup.js"], "matches": ["<all_urls>"] }],
+  "commands": { "toggle-overlay": { "suggested_key": { "default": "Ctrl+Shift+Y", "mac": "Command+Shift+Y" }, "description": "Show or hide Cross-Quadruzz" } }
+}
