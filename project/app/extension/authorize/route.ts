@@ -21,8 +21,14 @@ export async function GET(request: Request) {
     const returnTo = `${requestUrl.pathname}${requestUrl.search}`;
     return Response.redirect(new URL(chatGPTSignInPath(returnTo), requestUrl.origin));
   }
-  try { await requireApproved(user.userId); }
-  catch { return new Response('Your Quadruzz access is not approved.', { status: 403 }); }
+  try {
+    const member = await requireApproved(user.userId);
+    if (!member.display_name || !member.profile_image_key) throw new Error('Profile setup required.');
+  } catch {
+    const continuation = new URL('/', requestUrl.origin);
+    continuation.searchParams.set('extension_redirect_uri', redirectUrl.toString());
+    return Response.redirect(continuation);
+  }
   redirectUrl.hash = new URLSearchParams({ token: await createExtensionCredential(user.userId) }).toString();
   return Response.redirect(redirectUrl);
 }

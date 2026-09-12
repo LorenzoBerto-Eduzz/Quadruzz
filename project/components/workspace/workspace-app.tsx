@@ -74,7 +74,7 @@ function activityTime(createdAt: number): string {
   return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(createdAt));
 }
 
-export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload }) {
+export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { initialData: WorkspacePayload; extensionAuthorizeUrl?: string | null }) {
   const [data, setData] = useState<WorkspacePayload>(initialData);
   const [peopleReady, setPeopleReady] = useState(initialData.accessState !== 'approved' || !initialData.members.length);
   const [error, setError] = useState('');
@@ -189,6 +189,9 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
     return () => { cancelled = true; if (timer !== undefined) window.clearTimeout(timer); };
   }, [accessState, busy, refresh]);
   useEffect(() => {
+    if (extensionAuthorizeUrl && data.accessState === 'approved') window.location.replace(extensionAuthorizeUrl);
+  }, [data.accessState, extensionAuthorizeUrl]);
+  useEffect(() => {
     const synchronizeVisiblePage = () => {
       if (document.visibilityState === 'visible') void refresh();
     };
@@ -212,7 +215,7 @@ export function WorkspaceApp({ initialData }: { initialData: WorkspacePayload })
   }, [settingsOpen]);
 
   if (data.accessState === 'not_requested' || data.accessState === 'rejected' || data.accessState === 'pending' || data.accessState === 'onboarding') {
-    return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} error={error} />;
+    return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} error={error} extensionAuthorizeUrl={extensionAuthorizeUrl} />;
   }
 
   return (
@@ -302,7 +305,7 @@ function ProfileSettings({ displayName, saveProfile, closeSettings, busy }: { di
   );
 }
 
-function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; error: string }) {
+function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; error: string; extensionAuthorizeUrl: string | null }) {
   const pending = data.accessState === 'pending';
   const [optimisticPending, setOptimisticPending] = useState(false);
   const hostOnboarding = data.accessState === 'onboarding' && data.currentUser?.role === 'host';
@@ -325,6 +328,10 @@ function ProfileSetup({ data, finishProfile, busy, error }: { data: WorkspacePay
     <main className="gate">
       <form className="profile-setup" onSubmit={(event) => void submit(event)}>
         <h1>Cross</h1>
+        <div className="account-context">
+          <span>Using {data.currentUser?.email}</span>
+          <a href={`/signout-with-chatgpt?return_to=${encodeURIComponent(extensionAuthorizeUrl || '/')}`}>Change account</a>
+        </div>
         <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={waiting} onChange={(event) => setName(event.target.value)} />
         <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required disabled={waiting} onChange={(event) => { const file = event.target.files?.[0] || null; setImage(file); setPreparedImage(file ? decodeLocalProfileImage(file) : null); }} />
         {pending && data.currentUser?.pendingImageReceived && !image && <span className="pending-image-note">Profile image received</span>}

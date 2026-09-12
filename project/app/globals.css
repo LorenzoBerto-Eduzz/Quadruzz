@@ -27,6 +27,9 @@ button, input { font: inherit; }
 .gear svg { width: 1.1rem; height: 1.1rem; }
 .profile-setup { display: grid; width: min(100%, 20rem); gap: .75rem; text-align: left; }
 .profile-setup h1 { margin: 0 0 .35rem; text-align: center; font-size: 1.35rem; font-weight: 600; }
+.account-context { display: flex; align-items: center; justify-content: space-between; gap: .75rem; color: var(--muted); font-size: .8rem; }
+.account-context span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-context a { flex: none; color: var(--muted); text-underline-offset: .2rem; }
 .profile-setup input:disabled { opacity: .7; }
 .pending-image-note { color: var(--muted); font-size: .875rem; }
 .profile-setup input { min-height: 2.75rem; width: 100%; border: 1px solid rgba(255,255,255,.24); border-radius: .45rem; background: rgba(0,0,0,.08); color: var(--ink); padding: .65rem .75rem; }
