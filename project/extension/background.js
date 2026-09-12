@@ -7,6 +7,10 @@ async function tell(tabId, type) {
   try { await chrome.tabs.sendMessage(tabId, { type }); } catch { /* Restricted or unloaded tab. */ }
 }
 
+async function broadcast(type) {
+  try { await chrome.runtime.sendMessage({ type }); } catch { /* No visible overlay is listening. */ }
+}
+
 async function getState() {
   const state = await chrome.storage.session.get(['overlayVisible', 'activeTabId']);
   return { visible: state.overlayVisible === true, activeTabId: state.activeTabId || null };
@@ -17,6 +21,7 @@ async function resetState() { await chrome.storage.session.set({ overlayVisible:
 function connectionCallbackUrl() { return `https://${chrome.runtime.id}.chromiumapp.org/quadruzz`; }
 
 async function openConnectionTab() {
+  await broadcast('quadruzz-connect-started');
   const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
   if (stored.connectTabId) {
     try {
@@ -107,8 +112,12 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   await chrome.storage.session.remove(CONNECT_TAB_KEY);
   try { await chrome.runtime.sendMessage({ type: 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
 });
-chrome.runtime.onMessage.addListener((message, sender) => {
-  if (message?.type === 'quadruzz-connect') void openConnectionTab();
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'quadruzz-connect') void openConnectionTab().catch(() => broadcast('quadruzz-connect-cancelled'));
+  if (message?.type === 'quadruzz-connect-state') {
+    void chrome.storage.session.get(CONNECT_TAB_KEY).then((stored) => sendResponse({ connecting: Boolean(stored.connectTabId) }));
+    return true;
+  }
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
   if (message?.type === 'quadruzz-close') {

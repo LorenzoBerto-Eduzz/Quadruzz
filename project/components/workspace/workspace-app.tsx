@@ -2,7 +2,7 @@
 /* oxlint-disable next/no-img-element */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, Settings, X } from 'lucide-react';
+import { Check, Plus, Settings, X } from 'lucide-react';
 import type { WorkspacePayload } from '@/lib/workspace-types';
 
 const SYNC_INTERVAL_MS = 1_000;
@@ -345,7 +345,7 @@ function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl 
         <div className="profile-identity">
           <label className={`profile-image-picker${waiting ? ' profile-image-picker-disabled' : ''}`} aria-label="Choose profile image">
             <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required={!pending} disabled={waiting} onChange={(event) => selectImage(event.target.files?.[0] || null)} />
-            {previewUrl ? <img src={previewUrl} alt="" /> : <span aria-hidden="true">{pending && data.currentUser?.pendingImageReceived ? '✓' : '+'}</span>}
+            {previewUrl ? <img src={previewUrl} alt="" /> : pending && data.currentUser?.pendingImageReceived ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
           </label>
           <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={waiting} onChange={(event) => setName(event.target.value)} />
         </div>
