@@ -1,10 +1,10 @@
 import { getDb } from '@/db';
 import { authenticateExtensionIdentity } from '@/lib/extension-auth';
-import { closeExtensionSession, expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS, touchExtensionSession } from '@/lib/extension-activity';
+import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS } from '@/lib/extension-activity';
 import { markOnline, markSessionClosed } from '@/lib/activity-log';
 
 export const dynamic = 'force-dynamic';
-const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-quadruzz-extension-session', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'cache-control': 'no-store, max-age=0' };
+const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'cache-control': 'no-store, max-age=0' };
 const reply = (data: unknown, status = 200) => Response.json(data, { status, headers: cors });
 export function OPTIONS() { return new Response(null, { status: 204, headers: cors }); }
 function validPresenceSessionId(value: string | null | undefined): value is string {
@@ -23,15 +23,13 @@ export async function GET(request: Request) {
       return reply({ accessState: pending ? 'pending' : 'not_requested' });
     }
     await expireStaleExtensionSessions(now);
-    const sessionId = request.headers.get('x-quadruzz-extension-session')?.trim();
-    if (validPresenceSessionId(sessionId)) {
-      const session = await db.prepare('SELECT last_seen_at FROM extension_sessions WHERE session_id=? AND user_id=?').bind(sessionId, userId).first<{ last_seen_at: number }>();
-      if (!session || session.last_seen_at < now - 15_000) {
-        const member = await db.prepare("SELECT display_name FROM members WHERE user_id=? AND status='approved'").bind(userId).first<{ display_name: string | null }>();
-        await touchExtensionSession(userId, sessionId, member?.display_name || 'Member', now);
-      }
-    }
     const members = (await db.prepare(`SELECT m.user_id AS userId,m.display_name AS displayName,m.updated_at AS imageVersion,m.acting_state AS actingState,m.note,MAX(e.last_seen_at) AS extensionLastSeen,MAX(CASE WHEN e.last_seen_at>=? THEN 1 ELSE 0 END) AS extensionActive FROM members m LEFT JOIN extension_sessions e ON e.user_id=m.user_id WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL GROUP BY m.user_id ORDER BY extensionActive DESC,m.join_order ASC`).bind(now - EXTENSION_ACTIVE_AFTER_MS).all()).results as Array<Record<string, unknown>>;
+    const viewer = members.find((member) => member.userId === userId);
+    if (viewer && Number(viewer.extensionLastSeen || 0) < now - 30_000) {
+      await db.prepare('INSERT INTO extension_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(`reader:${userId}`, userId, now).run();
+      viewer.extensionActive = 1;
+      members.sort((a, b) => Number(Boolean(b.extensionActive)) - Number(Boolean(a.extensionActive)));
+    }
     for (const member of members) delete member.extensionLastSeen;
     return reply({ accessState: 'approved', currentUserId: userId, members });
   } catch { return reply({ error: 'Quadruzz is temporarily unavailable.' }, 503); }
@@ -43,13 +41,11 @@ export async function POST(request: Request) {
     if (!userId) return reply({ error: 'Extension authorization required.' }, 401);
     const approved = await getDb().prepare("SELECT 1 FROM members WHERE user_id=? AND status='approved'").bind(userId).first();
     if (!approved) return reply({ error: 'Approved membership required.' }, 403);
-    const body = await request.json() as { actingState?: string; note?: string | null; extensionAction?: 'heartbeat' | 'leave'; extensionSessionId?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
-    if (body.extensionAction) {
+    const body = await request.json() as { actingState?: string; note?: string | null; extensionAction?: 'heartbeat'; extensionSessionId?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
+    if (body.extensionAction === 'heartbeat') {
       const sessionId = body.extensionSessionId?.trim();
       if (!validPresenceSessionId(sessionId)) return reply({ error: 'Invalid extension session.' }, 400);
-      const member = await getDb().prepare("SELECT display_name FROM members WHERE user_id=? AND status='approved'").bind(userId).first<{ display_name: string | null }>();
-      if (body.extensionAction === 'heartbeat') await touchExtensionSession(userId, sessionId, member?.display_name || 'Member');
-      else await closeExtensionSession(userId, sessionId, member?.display_name || 'Member');
+      await getDb().prepare('INSERT INTO extension_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(sessionId, userId, Date.now()).run();
       if (!body.presenceAction) return reply({ ok: true });
     }
     if (body.presenceAction) {

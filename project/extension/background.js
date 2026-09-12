@@ -1,7 +1,6 @@
 const BASE = 'https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const ACTIVITY_ALARM = 'cross-quadruzz-activity';
 const CONNECT_TAB_KEY = 'connectTabId';
-let lastActivitySyncAt = 0;
 
 async function tell(tabId, type) {
   if (!tabId) return;
@@ -51,9 +50,7 @@ async function completeConnection(tabId, url) {
   return true;
 }
 
-async function synchronizeActivity(force = false) {
-  const now = Date.now();
-  if (!force && now - lastActivitySyncAt < 5000) return;
+async function synchronizeActivity() {
   try {
     const stored = await chrome.storage.local.get(['token', 'extensionActivitySessionId']);
     if (!stored.token) return;
@@ -64,21 +61,8 @@ async function synchronizeActivity(force = false) {
       headers: { authorization: `Bearer ${stored.token}`, 'content-type': 'application/json' },
       body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId }),
     });
-    if (response.ok) lastActivitySyncAt = now;
     if (response.status === 401) await chrome.storage.local.remove('token');
   } catch { /* The next alarm retries transient browser or network failures. */ }
-}
-
-async function disconnectActivity() {
-  try {
-    const stored = await chrome.storage.local.get(['token', 'extensionActivitySessionId']);
-    if (!stored.token || !stored.extensionActivitySessionId) return;
-    await fetch(`${BASE}/api/extension`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${stored.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ extensionAction: 'leave', extensionSessionId: stored.extensionActivitySessionId }),
-    });
-  } catch { /* The server timeout remains the reliable fallback. */ }
 }
 
 async function startActivityHeartbeat() {
@@ -88,7 +72,6 @@ async function startActivityHeartbeat() {
 }
 
 async function toggle(tab) {
-  void synchronizeActivity(true);
   const state = await getState();
   const visible = !state.visible;
   const activeTabId = tab?.id || state.activeTabId;
@@ -101,7 +84,6 @@ chrome.runtime.onInstalled.addListener(() => { void resetState(); void startActi
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === ACTIVITY_ALARM) void synchronizeActivity(); });
 chrome.action.onClicked.addListener(toggle);
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  void synchronizeActivity();
   const state = await getState();
   await chrome.storage.session.set({ activeTabId: tabId });
   if (!state.visible) return;
@@ -110,7 +92,6 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
 });
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
-  void synchronizeActivity();
   const state = await getState();
   if (!state.visible) return;
   const [tab] = await chrome.tabs.query({ active: true, windowId });
@@ -132,14 +113,14 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   try { await chrome.runtime.sendMessage({ type: 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
 });
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'quadruzz-open-hq') { void synchronizeActivity(true); void chrome.tabs.create({ url: BASE, active: true }); }
+  if (message?.type === 'quadruzz-open-hq') void chrome.tabs.create({ url: BASE, active: true });
   if (message?.type === 'quadruzz-connect') void openConnectionTab().catch(() => broadcast('quadruzz-connect-cancelled'));
   if (message?.type === 'quadruzz-connect-state') {
     void chrome.storage.session.get(CONNECT_TAB_KEY).then((stored) => sendResponse({ connecting: Boolean(stored.connectTabId) }));
     return true;
   }
   if (message?.type === 'quadruzz-account-changing') {
-    void disconnectActivity().finally(() => chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => broadcast('quadruzz-connect-cancelled')));
+    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => broadcast('quadruzz-connect-cancelled'));
   }
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
