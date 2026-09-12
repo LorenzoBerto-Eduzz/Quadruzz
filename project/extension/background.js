@@ -113,6 +113,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   try { await chrome.runtime.sendMessage({ type: 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
 });
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === 'quadruzz-open-hq') void chrome.tabs.create({ url: BASE, active: true });
   if (message?.type === 'quadruzz-connect') void openConnectionTab().catch(() => broadcast('quadruzz-connect-cancelled'));
   if (message?.type === 'quadruzz-connect-state') {
     void chrome.storage.session.get(CONNECT_TAB_KEY).then((stored) => sendResponse({ connecting: Boolean(stored.connectTabId) }));
