@@ -51,6 +51,13 @@ export async function POST(request: Request) {
     const previousRequest = member ? null : await db.prepare('SELECT profile_image_key FROM access_requests WHERE user_id=?').bind(user.userId).first<{profile_image_key: string | null}>();
     const previousKey = member?.profile_image_key || previousRequest?.profile_image_key || null;
     if (!file && !previousKey) return Response.json({ error: 'Choose an image.' }, { status: 400 });
+    if (!file) {
+      const now = Date.now();
+      if (member) await db.prepare('UPDATE members SET display_name=?,updated_at=? WHERE user_id=?').bind(displayName, now, user.userId).run();
+      else await db.prepare("UPDATE access_requests SET display_name=?,expires_at=? WHERE user_id=? AND status='pending'").bind(displayName, pendingRequestExpiresAt(now), user.userId).run();
+      await recordActivity(`${displayName} updated their profile`, now);
+      return Response.json(await getWorkspacePayload(user));
+    }
 
     let key = previousKey!;
     if (file) {
