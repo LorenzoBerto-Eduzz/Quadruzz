@@ -1,5 +1,6 @@
 const BASE = 'https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const ACTIVITY_ALARM = 'cross-quadruzz-activity';
+const CONNECT_TAB_KEY = 'connectTabId';
 
 async function tell(tabId, type) {
   if (!tabId) return;
@@ -12,6 +13,37 @@ async function getState() {
 }
 
 async function resetState() { await chrome.storage.session.set({ overlayVisible: false, activeTabId: null }); }
+
+function connectionCallbackUrl() { return `https://${chrome.runtime.id}.chromiumapp.org/quadruzz`; }
+
+async function openConnectionTab() {
+  const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
+  if (stored.connectTabId) {
+    try {
+      const existing = await chrome.tabs.get(stored.connectTabId);
+      await chrome.tabs.update(existing.id, { active: true });
+      if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+      return;
+    } catch { await chrome.storage.session.remove(CONNECT_TAB_KEY); }
+  }
+  const redirectUrl = connectionCallbackUrl();
+  const tab = await chrome.tabs.create({ url: `${BASE}/extension/authorize?redirect_uri=${encodeURIComponent(redirectUrl)}`, active: true });
+  if (tab.id) await chrome.storage.session.set({ connectTabId: tab.id });
+}
+
+async function completeConnection(tabId, url) {
+  const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
+  if (stored.connectTabId !== tabId || !url.startsWith(connectionCallbackUrl())) return false;
+  const token = new URLSearchParams(new URL(url).hash.slice(1)).get('token');
+  await chrome.storage.session.remove(CONNECT_TAB_KEY);
+  if (token) {
+    await chrome.storage.local.set({ token });
+    await startActivityHeartbeat();
+  }
+  try { await chrome.tabs.remove(tabId); } catch { /* The connection tab may already be closing. */ }
+  try { await chrome.runtime.sendMessage({ type: token ? 'quadruzz-connect-complete' : 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
+  return true;
+}
 
 async function synchronizeActivity() {
   try {
@@ -64,10 +96,19 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   await tell(tab.id, 'quadruzz-show');
 });
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  const destination = changeInfo.url || tab.url;
+  if (destination && await completeConnection(tabId, destination)) return;
   const state = await getState();
   if (state.visible && tab.active && changeInfo.status === 'complete') await tell(tabId, 'quadruzz-show');
 });
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
+  if (stored.connectTabId !== tabId) return;
+  await chrome.storage.session.remove(CONNECT_TAB_KEY);
+  try { await chrome.runtime.sendMessage({ type: 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
+});
 chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type === 'quadruzz-connect') void openConnectionTab();
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
   if (message?.type === 'quadruzz-close') {

@@ -5,7 +5,7 @@
   "description": "Quick access to Cross-Quadruzz from any Chrome tab.",
   "action": { "default_title": "Toggle Cross-Quadruzz" },
   "background": { "service_worker": "background.js" },
-  "permissions": ["storage", "identity", "tabs", "alarms"],
+  "permissions": ["storage", "tabs", "alarms"],
   "host_permissions": ["https://cross-quadruzz.l-busslerberto.chatgpt.site/*"],
   "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_idle" }],
   "web_accessible_resources": [{ "resources": ["popup.html", "popup.css", "popup.js"], "matches": ["http://*/*", "https://*/*"] }]

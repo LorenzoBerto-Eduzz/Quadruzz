@@ -312,7 +312,14 @@ function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl 
   const [name, setName] = useState(data.currentUser?.displayName || '');
   const [image, setImage] = useState<File | null>(null);
   const [preparedImage, setPreparedImage] = useState<Promise<LocalProfileImage | null> | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [localError, setLocalError] = useState('');
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+  function selectImage(file: File | null) {
+    setImage(file);
+    setPreparedImage(file ? decodeLocalProfileImage(file) : null);
+    setPreviewUrl(file ? URL.createObjectURL(file) : null);
+  }
   async function submit(event: { preventDefault(): void }) {
     event.preventDefault();
     if (pending) return;
@@ -324,17 +331,24 @@ function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl 
   }
   const waiting = pending || optimisticPending;
   const buttonLabel = waiting ? 'Waiting for approval' : busy && hostOnboarding ? 'Entering…' : hostOnboarding ? 'Enter' : 'Request access';
+  const accountReturnTo = extensionAuthorizeUrl || '/';
+  const chooseAccountPath = `/authentication?choose=1&return_to=${encodeURIComponent(accountReturnTo)}`;
+  const changeAccountPath = `/signout-with-chatgpt?return_to=${encodeURIComponent(chooseAccountPath)}`;
   return (
     <main className="gate">
       <form className="profile-setup" onSubmit={(event) => void submit(event)}>
         <h1>Cross</h1>
         <div className="account-context">
-          <span>Using {data.currentUser?.email}</span>
-          <a href={`/signout-with-chatgpt?return_to=${encodeURIComponent(extensionAuthorizeUrl || '/')}`}>Change account</a>
+          <span>{data.currentUser?.email}</span>
+          <a href={changeAccountPath}>Change</a>
         </div>
-        <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={waiting} onChange={(event) => setName(event.target.value)} />
-        <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required disabled={waiting} onChange={(event) => { const file = event.target.files?.[0] || null; setImage(file); setPreparedImage(file ? decodeLocalProfileImage(file) : null); }} />
-        {pending && data.currentUser?.pendingImageReceived && !image && <span className="pending-image-note">Profile image received</span>}
+        <div className="profile-identity">
+          <label className={`profile-image-picker${waiting ? ' profile-image-picker-disabled' : ''}`} aria-label="Choose profile image">
+            <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required={!pending} disabled={waiting} onChange={(event) => selectImage(event.target.files?.[0] || null)} />
+            {previewUrl ? <img src={previewUrl} alt="" /> : <span aria-hidden="true">{pending && data.currentUser?.pendingImageReceived ? '✓' : '+'}</span>}
+          </label>
+          <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={waiting} onChange={(event) => setName(event.target.value)} />
+        </div>
         <button className="plain-action" disabled={busy || waiting} type="submit">{buttonLabel}</button>
         {(localError || error) && <span className="plain-error">{localError || error}</span>}
       </form>
