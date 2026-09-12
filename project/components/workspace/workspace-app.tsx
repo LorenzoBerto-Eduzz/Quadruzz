@@ -129,14 +129,14 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
-  const finishProfile = useCallback(async (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => {
+  const finishProfile = useCallback(async (displayName: string, image: File | null, preparedImage?: Promise<LocalProfileImage | null>) => {
     const epoch = ++requestEpoch.current;
     setBusy(true); setError('');
     try {
-      const localImagePromise = preparedImage || decodeLocalProfileImage(image);
+      const localImagePromise = image ? preparedImage || decodeLocalProfileImage(image) : Promise.resolve(null);
       const form = new FormData();
       form.set('displayName', displayName);
-      form.set('image', image);
+      if (image) form.set('image', image);
       const [payload, localImage] = await Promise.all([
         readPayload(await fetch('/api/profile-image', { method: 'POST', body: form }), 'Profile setup failed.'),
         localImagePromise,
@@ -189,7 +189,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     return () => { cancelled = true; if (timer !== undefined) window.clearTimeout(timer); };
   }, [accessState, busy, refresh]);
   useEffect(() => {
-    if (extensionAuthorizeUrl && data.accessState === 'approved') window.location.replace(extensionAuthorizeUrl);
+    if (extensionAuthorizeUrl && (data.accessState === 'approved' || data.accessState === 'pending')) window.location.replace(extensionAuthorizeUrl);
   }, [data.accessState, extensionAuthorizeUrl]);
   useEffect(() => {
     const synchronizeVisiblePage = () => {
@@ -305,7 +305,7 @@ function ProfileSettings({ displayName, saveProfile, closeSettings, busy }: { di
   );
 }
 
-function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; error: string; extensionAuthorizeUrl: string | null }) {
+function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File | null, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; error: string; extensionAuthorizeUrl: string | null }) {
   const pending = data.accessState === 'pending';
   const [optimisticPending, setOptimisticPending] = useState(false);
   const hostOnboarding = data.accessState === 'onboarding' && data.currentUser?.role === 'host';
@@ -322,15 +322,14 @@ function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl 
   }
   async function submit(event: { preventDefault(): void }) {
     event.preventDefault();
-    if (pending) return;
-    if (!image) { setLocalError('Choose an image.'); return; }
+    if (!image && !data.currentUser?.imageUrl) { setLocalError('Choose an image.'); return; }
     setLocalError('');
-    if (!hostOnboarding) setOptimisticPending(true);
+    if (!pending && !hostOnboarding) setOptimisticPending(true);
     const succeeded = await finishProfile(name, image, preparedImage || undefined);
     if (!succeeded) setOptimisticPending(false);
   }
-  const waiting = pending || optimisticPending;
-  const buttonLabel = waiting ? 'Waiting for approval' : busy && hostOnboarding ? 'Entering…' : hostOnboarding ? 'Enter' : 'Request access';
+  const waiting = optimisticPending;
+  const buttonLabel = pending ? busy ? 'Saving…' : 'Save changes' : waiting ? 'Waiting for approval' : busy && hostOnboarding ? 'Entering…' : hostOnboarding ? 'Enter' : 'Request access';
   const accountReturnTo = extensionAuthorizeUrl || '/';
   const chooseAccountPath = `/authentication?choose=1&return_to=${encodeURIComponent(accountReturnTo)}`;
   const changeAccountPath = `/signout-with-chatgpt?return_to=${encodeURIComponent(chooseAccountPath)}`;
@@ -338,16 +337,16 @@ function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl 
     <main className="gate">
       <form className="profile-setup" onSubmit={(event) => void submit(event)}>
         <h1>Cross</h1>
-        <div className="account-context">
+        <a className="account-context" href={changeAccountPath} onClick={() => window.postMessage({ type: 'quadruzz-account-changing' }, window.location.origin)}>
           <span>{data.currentUser?.email}</span>
-          <a href={changeAccountPath}>Change</a>
-        </div>
+          <span className="account-change">Change</span>
+        </a>
         <div className="profile-identity">
-          <label className={`profile-image-picker${waiting ? ' profile-image-picker-disabled' : ''}`} aria-label="Choose profile image">
-            <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required={!pending} disabled={waiting} onChange={(event) => selectImage(event.target.files?.[0] || null)} />
-            {previewUrl ? <img src={previewUrl} alt="" /> : pending && data.currentUser?.pendingImageReceived ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
+          <label className={`profile-image-picker${busy || waiting ? ' profile-image-picker-disabled' : ''}`} aria-label="Choose profile image">
+            <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required={!data.currentUser?.imageUrl} disabled={busy || waiting} onChange={(event) => selectImage(event.target.files?.[0] || null)} />
+            {previewUrl || data.currentUser?.imageUrl ? <img src={previewUrl || data.currentUser?.imageUrl || ""} alt="" /> : <Plus aria-hidden="true" />}
           </label>
-          <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={waiting} onChange={(event) => setName(event.target.value)} />
+          <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required disabled={busy || waiting} onChange={(event) => setName(event.target.value)} />
         </div>
         <button className="plain-action" disabled={busy || waiting} type="submit">{buttonLabel}</button>
         {(localError || error) && <span className="plain-error">{localError || error}</span>}

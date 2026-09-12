@@ -36,6 +36,14 @@ function hide() {
 }
 chrome.runtime.onMessage.addListener((message) => { if (message?.type === 'quadruzz-show') show(); if (message?.type === 'quadruzz-hide') hide(); });
 
+window.addEventListener('message', (event) => {
+  if (location.origin !== 'https://cross-quadruzz.l-busslerberto.chatgpt.site' || event.source !== window || event.origin !== location.origin || event.data?.type !== 'quadruzz-account-changing') return;
+  try {
+    const sent = chrome.runtime.sendMessage({ type: 'quadruzz-account-changing' });
+    if (sent?.catch) sent.catch(() => {});
+  } catch { /* Extension was reloaded while this page remained open. */ }
+});
+
 window.addEventListener('keydown', (event) => {
   if (event.repeat || event.code !== 'KeyW' || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
   event.preventDefault();

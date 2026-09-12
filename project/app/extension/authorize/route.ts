@@ -1,6 +1,6 @@
 import { chatGPTSignInPath, getChatGPTUser } from '@/app/chatgpt-auth';
 import { createExtensionCredential } from '@/lib/extension-auth';
-import { requireApproved } from '@/lib/workspace-data';
+import { getWorkspacePayload } from '@/lib/workspace-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +21,9 @@ export async function GET(request: Request) {
     const returnTo = `${requestUrl.pathname}${requestUrl.search}`;
     return Response.redirect(new URL(chatGPTSignInPath(returnTo), requestUrl.origin));
   }
-  try {
-    const member = await requireApproved(user.userId);
-    if (!member.display_name || !member.profile_image_key) throw new Error('Profile setup required.');
-  } catch {
+  const payload = await getWorkspacePayload(user);
+  const connected = payload.accessState === 'pending' || (payload.accessState === 'approved' && payload.currentUser?.displayName && payload.currentUser.imageUrl);
+  if (!connected) {
     const continuation = new URL('/', requestUrl.origin);
     continuation.searchParams.set('extension_redirect_uri', redirectUrl.toString());
     return Response.redirect(continuation);

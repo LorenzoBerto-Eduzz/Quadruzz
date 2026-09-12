@@ -1,5 +1,5 @@
 import { getDb } from '@/db';
-import { authenticateExtension } from '@/lib/extension-auth';
+import { authenticateExtensionIdentity } from '@/lib/extension-auth';
 import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS } from '@/lib/extension-activity';
 import { markOnline, markSessionClosed } from '@/lib/activity-log';
 
@@ -13,11 +13,16 @@ function validPresenceSessionId(value: string | null | undefined): value is stri
 
 export async function GET(request: Request) {
   try {
-    const userId = await authenticateExtension(request);
+    const userId = await authenticateExtensionIdentity(request);
     if (!userId) return reply({ error: 'Extension authorization required.' }, 401);
     const now = Date.now();
-    await expireStaleExtensionSessions(now);
     const db = getDb();
+    const approved = await db.prepare("SELECT 1 FROM members WHERE user_id=? AND status='approved'").bind(userId).first();
+    if (!approved) {
+      const pending = await db.prepare("SELECT 1 FROM access_requests WHERE user_id=? AND status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>?").bind(userId, now).first();
+      return reply({ accessState: pending ? 'pending' : 'not_requested' });
+    }
+    await expireStaleExtensionSessions(now);
     const members = (await db.prepare(`SELECT m.user_id AS userId,m.display_name AS displayName,m.updated_at AS imageVersion,m.acting_state AS actingState,m.note,MAX(e.last_seen_at) AS extensionLastSeen,MAX(CASE WHEN e.last_seen_at>=? THEN 1 ELSE 0 END) AS extensionActive FROM members m LEFT JOIN extension_sessions e ON e.user_id=m.user_id WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL GROUP BY m.user_id ORDER BY extensionActive DESC,m.join_order ASC`).bind(now - EXTENSION_ACTIVE_AFTER_MS).all()).results as Array<Record<string, unknown>>;
     const viewer = members.find((member) => member.userId === userId);
     if (viewer && Number(viewer.extensionLastSeen || 0) < now - 30_000) {
@@ -26,14 +31,16 @@ export async function GET(request: Request) {
       members.sort((a, b) => Number(Boolean(b.extensionActive)) - Number(Boolean(a.extensionActive)));
     }
     for (const member of members) delete member.extensionLastSeen;
-    return reply({ currentUserId: userId, members });
+    return reply({ accessState: 'approved', currentUserId: userId, members });
   } catch { return reply({ error: 'Quadruzz is temporarily unavailable.' }, 503); }
 }
 
 export async function POST(request: Request) {
   try {
-    const userId = await authenticateExtension(request);
+    const userId = await authenticateExtensionIdentity(request);
     if (!userId) return reply({ error: 'Extension authorization required.' }, 401);
+    const approved = await getDb().prepare("SELECT 1 FROM members WHERE user_id=? AND status='approved'").bind(userId).first();
+    if (!approved) return reply({ error: 'Approved membership required.' }, 403);
     const body = await request.json() as { actingState?: string; note?: string | null; extensionAction?: 'heartbeat'; extensionSessionId?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
     if (body.extensionAction === 'heartbeat') {
       const sessionId = body.extensionSessionId?.trim();

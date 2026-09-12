@@ -60,7 +60,7 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   const base = { currentUser: { userId: user.userId, email: user.email }, members: [], requests: [], activity: [], boardTitle: 'Cross-Quadruzz' };
   if (!member || member.status !== 'approved') {
     const request = await db.prepare("SELECT status,display_name,profile_image_key,expires_at FROM access_requests WHERE user_id=? AND status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>?").bind(user.userId, now).first<RequestRow>();
-    if (request) return { ...base, accessState: 'pending', currentUser: { ...base.currentUser, displayName: request.display_name, pendingImageReceived: Boolean(request.profile_image_key) }, hostConfigurationRequired: !configuredHostUserId() };
+    if (request) return { ...base, accessState: 'pending', currentUser: { ...base.currentUser, displayName: request.display_name, imageUrl: `/api/profile-image?pending=1&v=${request.expires_at || now}`, pendingImageReceived: Boolean(request.profile_image_key) }, hostConfigurationRequired: !configuredHostUserId() };
     return { ...base, accessState: 'not_requested', hostConfigurationRequired: !configuredHostUserId() };
   }
   const currentUser = { userId: member.user_id, email: member.email, role: member.role, displayName: member.display_name, imageUrl: member.profile_image_key ? '/api/profile-image' : null };

@@ -118,6 +118,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void chrome.storage.session.get(CONNECT_TAB_KEY).then((stored) => sendResponse({ connecting: Boolean(stored.connectTabId) }));
     return true;
   }
+  if (message?.type === 'quadruzz-account-changing') {
+    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => broadcast('quadruzz-connect-cancelled'));
+  }
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
   if (message?.type === 'quadruzz-close') {
