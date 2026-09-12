@@ -4,7 +4,7 @@ import { closeExtensionSession, expireStaleExtensionSessions, EXTENSION_ACTIVE_A
 import { markOnline, markSessionClosed } from '@/lib/activity-log';
 
 export const dynamic = 'force-dynamic';
-const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'cache-control': 'no-store, max-age=0' };
+const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type, x-quadruzz-extension-session', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'cache-control': 'no-store, max-age=0' };
 const reply = (data: unknown, status = 200) => Response.json(data, { status, headers: cors });
 export function OPTIONS() { return new Response(null, { status: 204, headers: cors }); }
 function validPresenceSessionId(value: string | null | undefined): value is string {
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
       return reply({ accessState: pending ? 'pending' : 'not_requested' });
     }
     await expireStaleExtensionSessions(now);
-    const sessionId = new URL(request.url).searchParams.get('extension_session')?.trim();
+    const sessionId = request.headers.get('x-quadruzz-extension-session')?.trim();
     if (validPresenceSessionId(sessionId)) {
       const session = await db.prepare('SELECT last_seen_at FROM extension_sessions WHERE session_id=? AND user_id=?').bind(sessionId, userId).first<{ last_seen_at: number }>();
       if (!session || session.last_seen_at < now - 15_000) {
