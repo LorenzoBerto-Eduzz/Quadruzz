@@ -28,7 +28,7 @@ The agreed initial product direction is:
 - heartbeat-based presence expiry; and
 - future shared state backed by Sites storage.
 
-The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+W toggles the overlay; hidden mode remains active for future note notifications. Unlisted Chrome Web Store distribution comes after local testing.
+The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+W toggles the overlay; hidden mode remains active for future note notifications. Version `0.1.0` has been submitted for Chrome Web Store review while local development continues.
 
 ## Run And Test Commands
 
@@ -67,7 +67,7 @@ Keep this brief summary current. Put detailed build, export, package, deployment
 1. Continue the Companion popup with acting-state controls, notes, and hidden-state note notifications.
 2. Keep the hosted Site as the HQ for access, profiles, membership, logs, and instance configuration.
 3. Keep authorization, membership, live data, and revocation server-authoritative and shared across Site and Companion.
-4. Defer dragging/saved coordinates and Chrome Web Store distribution until explicitly requested.
+4. Defer dragging/saved coordinates. After Store approval, connect the HQ installation prompt to the approved listing.
 ## Glossary
 
 - **Companion activity:** approved users whose authorized extension has made recent authenticated traffic; this is the canonical vivid/dim and online state.
@@ -81,10 +81,9 @@ Keep this brief summary current. Put detailed build, export, package, deployment
 - The source was copied from an existing ChatGPT Sites application; do not replace or regenerate its hosting manifest.
 - The old test screen is gone. Preserve the deployed minimal board and direct-entry authentication flow.
 - `npm run build` writes generated output under `project/dist/`; generated output must remain untracked.
-- No Git remote is configured during initial setup unless the owner provides one.
+- The public Git remote is `https://github.com/LorenzoBerto-Eduzz/Quadruzz.git`.
+- Reloading the unpacked extension leaves old injected tab contexts invalid; refresh open test tabs after every extension reload.
 
 ## Settled Product Specification
 
 Use `docs/PRODUCT_SPEC.md` as the authoritative product specification before implementation. It records the authenticated OpenAI user-ID boundary, pending-access privacy rules, permanent owner and role permissions, required onboarding profile, Companion-defined activity with 90-second expiry, D1/R2 responsibilities, settings/admin scope, and deferred dragging/distribution work.
-
-

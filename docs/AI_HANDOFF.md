@@ -17,6 +17,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 - Git is initialized on `main` with identity `Lo <lorenzo.berto@eduzz.com>` and the identity guard enabled.
 - Dependencies are installed; the setup verifier and production build passed.
 - Cross-Quadruzz authentication, access requests, D1/R2-backed membership and profiles, the minimal member board, settings/log popup, and the first local Companion extension are implemented. Companion activity is the canonical online state shared by the extension and Site.
+- The Companion/member-list and vivid/dim presence flow was re-tested by the owner and confirmed working after restoring the stable implementation. Preserve this baseline before changing presence again.
 - Settled route structure: `/` is the complete workspace and all account-dependent states; signed-out visitors are redirected to `/authentication`; sign-in returns to `/`; legacy `/workspace` redirects to `/`.
 - The ignored `tmp/sites-reference/` scaffold exists only to inspect official Sites auth/D1/R2 patterns; do not commit it.
 - The settings popup is functional: every approved member can edit their profile and see and decide pending requests. Only the permanent host can remove another ordinary member through the compact × action; the host cannot be removed. No role labels are shown.
@@ -25,6 +26,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 
 - Quadruzz Companion is now the primary daily interface. The current local unpacked Cross build lives in `project/extension/`; later distribution should be an unlisted Chrome Web Store item and can evolve toward a global multi-instance Companion.
 - The current Companion is a persistent floating top-right overlay injected into the focused ordinary browser tab. The toolbar icon and Alt+Shift+W toggle it; hidden mode stays active for future notifications. It shows every approved member, with active members vivid and first, and inactive members dimmed afterward.
+- Companion version is `0.1.0`. The unpacked development source is `project/extension/`; the current uploadable archive is `local_assets/cross-quadruzz-extension-0.1.0.zip`. A Chrome Web Store draft has been submitted and is awaiting review, while local testing continues from the unpacked source.
 - Companion authorization is issued through the authenticated Cross Site and bound to the stable OpenAI user ID. It uses the same server-authoritative membership/profile/state data as the Site; removal or credential revocation invalidates extension access.
 
 - The public URL shows only Sign in with ChatGPT. Signed-in users request access and remain pending until approved. Anonymous and pending users see no board or member data.
@@ -59,7 +61,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 
 - Continue the Companion popup: add owner-selectable acting values (initial placeholders `chat` and `ticket`), member notes, and hidden-state note notifications.
 - Continue the HQ as the configuration, access, membership, and instance control center while keeping shared data and permissions server-authoritative.
-- After local testing, prepare unlisted Chrome Web Store distribution when explicitly requested.
+- Continue local Companion development; after changes stabilize, prepare a new versioned Web Store archive and submit it as an update. Add the HQ install prompt only after the Store listing is approved and its installation URL is known.
 - Validate each hosted-page change locally and follow the current owner authorization for delivery unless a request explicitly says not to commit or deploy.
 
 ## Durable Workflow Decisions
@@ -69,6 +71,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 - For Quadruzz, `gitcheck` performs `memcheck`, validation, identity verification, staging, commit, push, and deployment of that exact commit to the existing live Site unless the owner explicitly says not to deploy.
 - Local build verification does not authorize deployment.
 - For Sites delivery from this monorepo, stage the tracked `project/` source in an isolated temporary Git checkout rooted at the Site project, then use the normal Sites hosting flow. Do not recreate a persistent nested repository inside `project/`.
+- Reloading an unpacked extension invalidates extension contexts already injected into open tabs. After reloading it in `chrome://extensions`, refresh each test tab before judging the popup. Do not introduce new cross-origin request headers or redesign the canonical presence-session path without verifying the popup member list and HQ vivid/dim state together in a real Chrome profile.
 
 ## Settled Door And Settings Flow (2026-09-09)
 
