@@ -48,8 +48,15 @@ function ensureFrame() {
         if (revealRequested) {
           frame.style.display = 'block';
           frame.style.visibility = 'visible';
-          frame.focus({ preventScroll: true });
-          frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
+          const needsInputFocus =
+            requestedMode === 'role' ||
+            requestedMode === 'note' ||
+            carriedPanel === 'role' ||
+            carriedPanel === 'note';
+          if (needsInputFocus) {
+            frame.focus({ preventScroll: true });
+            frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
+          }
         }
       }
     });
