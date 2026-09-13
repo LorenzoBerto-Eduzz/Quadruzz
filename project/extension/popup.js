@@ -51,7 +51,7 @@ function notificationKey(notification){return `${notification.userId}:${notifica
 function clearNotifications(render=true){notifications=[];for(const timer of notificationTimers.values())clearTimeout(timer);notificationTimers.clear();document.querySelector('.note-notifications')?.remove();if(render&&latestData)renderMembers()}
 function removeNotification(key){notifications=notifications.filter(item=>notificationKey(item)!==key);const timer=notificationTimers.get(key);if(timer)clearTimeout(timer);notificationTimers.delete(key);if(!notifications.length&&!pickerOpen&&!noteOpen&&standaloneNotification){hideOverlayNow();return}if(latestData)renderMembers()}
 function addNotification(notification){if(!notification?.note||notification.userId===latestData?.currentUserId)return;const key=notificationKey(notification);notifications=notifications.filter(item=>notificationKey(item)!==key);notifications.unshift(notification);const previous=notificationTimers.get(key);if(previous)clearTimeout(previous);notificationTimers.set(key,setTimeout(()=>removeNotification(key),5000));if(latestData)renderMembers()}
-function notificationMarkup(){if(!notifications.length)return'';return `<div class="note-notifications">${notifications.map(notification=>{const twoLines=noteUsesTwoLines(notification.note);return `<div class="note-notification${twoLines?' two-lines':''}"><div class="notification-identity"><span class="notification-name">${esc(notification.displayName)}</span><span class="notification-role">${esc(notification.actingState)}</span></div><div class="notification-note">${esc(notification.note)}</div></div>`}).join('')}</div>`}
+function notificationMarkup(){if(!notifications.length)return'';return `<div class="note-notifications">${notifications.map(notification=>{const twoLines=noteUsesTwoLines(notification.note);return `<div class="note-notification${twoLines?' two-lines':''}"><div class="notification-identity"><span class="notification-name">${esc(notification.displayName)}</span><span class="notification-role">${esc(notification.actingState||'-')}</span></div><div class="notification-note">${esc(notification.note)}</div></div>`}).join('')}</div>`}
 function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?42:32),0)+(notifications.length-1)*2}
 function detectNoteNotifications(data){const next=new Map();for(const member of data.members){const version=Number(member.noteUpdatedAt||0);next.set(member.userId,version);if(notesInitialized&&member.userId!==data.currentUserId&&member.note&&version&&knownNoteVersions.get(member.userId)!==version){try{const sent=chrome.runtime.sendMessage({type:'quadruzz-note-notification',notification:{userId:member.userId,displayName:member.displayName,actingState:member.actingState,note:member.note,noteUpdatedAt:version}});if(sent?.catch)sent.catch(()=>{})}catch{/* Extension context closed. */}}}knownNoteVersions.clear();for(const [userId,version] of next)knownNoteVersions.set(userId,version);notesInitialized=true}
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
@@ -65,6 +65,7 @@ window.addEventListener('message',event=>{
   if(event.data?.type==='quadruzz-note-notification'){addNotification(event.data.notification);return}
   if(event.data?.type==='quadruzz-clear-notifications'){clearNotifications(false);return}
   if(event.data?.type==='quadruzz-picker-prepared'){const panel=pendingPanel;pendingPanel=null;if(panel==='role'){pickerOpen=true;noteOpen=false;selectedRoleIndex=0;roleFilter=''}else if(panel==='note'){noteOpen=true;pickerOpen=false;noteDraft='';noteLastValid=''}renderMembers();return}
+  if(event.data?.type==='quadruzz-transfer-suspend'){focusRequest+=1;document.querySelector('.role-picker,.note-editor')?.remove();return}
   if(event.data?.type==='quadruzz-overlay-hidden'){focusRequest+=1;overlayVisible=false;pickerOpen=false;noteOpen=false;standaloneRole=false;standaloneNote=false;standaloneNotification=false;clearNotifications(false);pendingPanel=null;selectedRoleIndex=0;roleFilter='';noteDraft='';noteLastValid='';pickerDesiredHeight=0;document.documentElement.classList.remove('standalone-role','standalone-note');document.querySelector('.role-picker,.note-editor')?.remove();return}
   if(event.data?.type==='quadruzz-presented'){
     if(Number(event.data.presentationId||0)===presentationId)focusOverlayInput();
@@ -159,6 +160,7 @@ function bindRolePicker(){
   input.addEventListener('keydown',event=>{
     if(event.key==='Enter'){
       event.preventDefault();
+      if(!input.value.trim())return;
       if(selectedRoleIndex>=0)void chooseRole(matchingRoles()[selectedRoleIndex],false);
       else void chooseRole(input.value,true);
       return;
@@ -271,7 +273,7 @@ function renderMembers(){
   document.querySelectorAll('.role-picker,.note-editor,.note-notifications').forEach(element=>element.remove());
   const rows=latestData.members.map((member,index)=>{
     const self=member.userId===latestData.currentUserId;
-    const role=`<span class="role-label">${esc(member.actingState)}</span>`;
+    const role=`<span class="role-label">${esc(member.actingState||'-')}</span>`;
     const name=self?`<button class="name own-zone note-trigger" type="button" aria-expanded="${noteOpen}"><span class="name-label">${esc(member.displayName)}</span></button>`:`<span class="name"><span class="name-label">${esc(member.displayName)}</span></span>`;
     const state=self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${role}</button>`:`<span class="state role-display">${role}</span>`;
     const twoLineNote=noteUsesTwoLines(member.note);

@@ -8,7 +8,7 @@ export const members = sqliteTable('members', {
   joinOrder: integer('join_order').notNull().unique(),
   displayName: text('display_name'),
   profileImageKey: text('profile_image_key'),
-  actingState: text('acting_state').notNull().default('chat'),
+  actingState: text('acting_state').notNull().default(''),
   note: text('note'),
   noteUpdatedAt: integer('note_updated_at'),
   lastSeenAt: integer('last_seen_at'),

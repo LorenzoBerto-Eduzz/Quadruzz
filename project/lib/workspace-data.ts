@@ -45,8 +45,8 @@ export async function ensureConfiguredHost(user: ChatGPTUser): Promise<void> {
   const existing = await db.prepare('SELECT email,role,status FROM members WHERE user_id=?').bind(user.userId).first<{email: string; role: Role; status: string}>();
   if (existing?.email === user.email && existing.role === 'host' && existing.status === 'approved') return;
   const now = Date.now();
-  await db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,last_seen_at,created_at,updated_at)
-    VALUES (?,?,'host','approved',1,NULL,NULL,?, ?, ?)
+  await db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,acting_state,last_seen_at,created_at,updated_at)
+    VALUES (?,?,'host','approved',1,NULL,NULL,'',?, ?, ?)
     ON CONFLICT(user_id) DO UPDATE SET email=excluded.email, role='host', status='approved', updated_at=excluded.updated_at`)
     .bind(user.userId, user.email, now, now, now).run();
 }

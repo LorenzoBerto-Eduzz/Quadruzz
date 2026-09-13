@@ -107,6 +107,7 @@ function suspend() {
   revealFrame = null;
   const frame = document.getElementById(FRAME_ID);
   if (!frame) return;
+  frame.contentWindow?.postMessage({ type: 'quadruzz-transfer-suspend' }, '*');
   frame.style.opacity = '0';
   frame.style.pointerEvents = 'none';
   frame.style.visibility = 'hidden';
