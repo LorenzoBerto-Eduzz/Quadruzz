@@ -2,9 +2,9 @@ const BASE = 'https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const ACTIVITY_ALARM = 'cross-quadruzz-activity';
 const CONNECT_TAB_KEY = 'connectTabId';
 
-async function tell(tabId, type) {
+async function tell(tabId, type, mode) {
   if (!tabId) return;
-  try { await chrome.tabs.sendMessage(tabId, { type }); } catch { /* Restricted or unloaded tab. */ }
+  try { await chrome.tabs.sendMessage(tabId, { type, mode }); } catch { /* Restricted or unloaded tab. */ }
 }
 
 async function broadcast(type) {
@@ -12,11 +12,11 @@ async function broadcast(type) {
 }
 
 async function getState() {
-  const state = await chrome.storage.session.get(['overlayVisible', 'activeTabId']);
-  return { visible: state.overlayVisible === true, activeTabId: state.activeTabId || null };
+  const state = await chrome.storage.session.get(['overlayMode', 'activeTabId']);
+  return { mode: state.overlayMode || 'hidden', activeTabId: state.activeTabId || null };
 }
 
-async function resetState() { await chrome.storage.session.set({ overlayVisible: false, activeTabId: null }); }
+async function resetState() { await chrome.storage.session.set({ overlayMode: 'hidden', activeTabId: null }); }
 
 function connectionCallbackUrl() { return `https://${chrome.runtime.id}.chromiumapp.org/quadruzz`; }
 
@@ -73,10 +73,22 @@ async function startActivityHeartbeat() {
 
 async function toggle(tab) {
   const state = await getState();
-  const visible = !state.visible;
+  const mode = state.mode === 'popup' ? 'hidden' : 'popup';
   const activeTabId = tab?.id || state.activeTabId;
-  await chrome.storage.session.set({ overlayVisible: visible, activeTabId });
-  await tell(activeTabId, visible ? 'quadruzz-show' : 'quadruzz-hide');
+  await chrome.storage.session.set({ overlayMode: mode, activeTabId });
+  await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode);
+}
+
+async function toggleRole(tab) {
+  const state = await getState();
+  const activeTabId = tab?.id || state.activeTabId;
+  if (state.mode === 'popup') {
+    await tell(activeTabId, 'quadruzz-role-toggle-open');
+    return;
+  }
+  const mode = state.mode === 'role' ? 'hidden' : 'role';
+  await chrome.storage.session.set({ overlayMode: mode, activeTabId });
+  await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode);
 }
 
 chrome.runtime.onStartup.addListener(() => { void resetState(); void startActivityHeartbeat(); });
@@ -86,25 +98,25 @@ chrome.action.onClicked.addListener(toggle);
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   const state = await getState();
   await chrome.storage.session.set({ activeTabId: tabId });
-  if (!state.visible) return;
+  if (state.mode === 'hidden') return;
   await tell(state.activeTabId, 'quadruzz-hide');
-  await tell(tabId, 'quadruzz-show');
+  await tell(tabId, 'quadruzz-show', state.mode);
 });
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
   const state = await getState();
-  if (!state.visible) return;
+  if (state.mode === 'hidden') return;
   const [tab] = await chrome.tabs.query({ active: true, windowId });
   if (!tab?.id || tab.id === state.activeTabId) return;
   await chrome.storage.session.set({ activeTabId: tab.id });
   await tell(state.activeTabId, 'quadruzz-hide');
-  await tell(tab.id, 'quadruzz-show');
+  await tell(tab.id, 'quadruzz-show', state.mode);
 });
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   const destination = changeInfo.url || tab.url;
   if (destination && await completeConnection(tabId, destination)) return;
   const state = await getState();
-  if (state.visible && tab.active && changeInfo.status === 'complete') await tell(tabId, 'quadruzz-show');
+  if (state.mode !== 'hidden' && tab.active && changeInfo.status === 'complete') await tell(tabId, 'quadruzz-show', state.mode);
 });
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
@@ -124,8 +136,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
+  if (message?.type === 'quadruzz-role-toggle') void toggleRole(sender.tab);
+  if (message?.type === 'quadruzz-force-popup') {
+    void chrome.storage.session.set({ overlayMode: 'popup', activeTabId: sender.tab?.id }).then(() => tell(sender.tab?.id, 'quadruzz-show', 'popup'));
+  }
   if (message?.type === 'quadruzz-close') {
-    void chrome.storage.session.set({ overlayVisible: false });
+    void chrome.storage.session.set({ overlayMode: 'hidden' });
     void tell(sender.tab?.id, 'quadruzz-hide');
   }
   if (message?.type === 'quadruzz-shortcuts') void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });

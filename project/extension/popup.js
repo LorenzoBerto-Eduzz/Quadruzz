@@ -14,11 +14,24 @@ let appliedLoadSequence=0;
 let lastRenderSignature='';
 let pickerDesiredHeight=0;
 let roleLayoutFrame=null;
+let standaloneRole=false;
 
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
-window.addEventListener('keydown',event=>{if(event.repeat||event.code!=='KeyW'||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey)return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:'quadruzz-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
+window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.ctrlKey&&event.shiftKey&&!event.altKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle))return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:popupToggle?'quadruzz-toggle':'quadruzz-role-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
 chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView()});
-window.addEventListener('message',event=>{if(event.source===parent&&event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen)closeRolePicker()});
+window.addEventListener('message',event=>{
+  if(event.source!==parent)return;
+  if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
+  if(event.data?.type==='quadruzz-role-toggle'){pickerOpen=!pickerOpen;roleFilter='';renderMembers();return}
+  if(event.data?.type==='quadruzz-overlay-mode'){
+    const wasStandalone=standaloneRole;
+    standaloneRole=event.data.mode==='role';
+    document.documentElement.classList.toggle('standalone-role',standaloneRole);
+    if(standaloneRole)pickerOpen=true;
+    else if(wasStandalone)pickerOpen=true;
+    if(latestData)renderMembers();
+  }
+});
 document.addEventListener('pointerdown',event=>{if(pickerOpen&&!event.target.closest('.role-picker,.role-trigger'))closeRolePicker()});
 
 function storageCall(method,value){return new Promise((resolve,reject)=>{try{chrome.storage.local[method](value,result=>{try{const failure=chrome.runtime.lastError;if(failure)reject(new Error(failure.message));else resolve(result)}catch(error){reject(error)}})}catch(error){reject(error)}})}
@@ -27,16 +40,17 @@ function reportSize(){const base=document.querySelector('header').offsetHeight+a
 function reportReady(){reportSize();window.parent.postMessage({type:'quadruzz-ready'},'*')}
 async function api(path,options={}){const{token}=await storage.get('token');const headers={...(options.headers||{}),...(token?{authorization:`Bearer ${token}`}:{})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove('token');return response}
 async function pulseActivity(){try{const stored=await storage.get(['token','extensionActivitySessionId','extensionActivityPulseAt']);if(!stored.token)return;const now=Date.now();if(now-(stored.extensionActivityPulseAt||0)<15000)return;const extensionSessionId=stored.extensionActivitySessionId||crypto.randomUUID();await storage.set({extensionActivitySessionId,extensionActivityPulseAt:now});const response=await fetch(`${BASE}/api/extension`,{method:'POST',headers:{authorization:`Bearer ${stored.token}`,'content-type':'application/json'},body:JSON.stringify({extensionAction:'heartbeat',extensionSessionId})});if(response.status===401)await storage.remove(['token','extensionActivityPulseAt']);else if(!response.ok)await storage.remove('extensionActivityPulseAt')}catch(error){if(!stopInvalidContext(error))try{await storage.remove('extensionActivityPulseAt')}catch{/* The next member refresh retries. */}}}
-function connectingView(){app.innerHTML='<div class="connect"><button class="primary" disabled>Connecting to Cross…</button></div>';reportReady()}
-function waitingView(){app.innerHTML='<div class="connect"><button class="primary" id="open-hq">Waiting for approval</button></div>';document.querySelector('#open-hq').addEventListener('click',()=>chrome.runtime.sendMessage({type:'quadruzz-open-hq'}));reportReady()}
-function signInView(){app.innerHTML='<div class="connect"><button class="primary" id="sign-in">Connect to Cross</button></div>';document.querySelector('#sign-in').addEventListener('click',signIn);reportReady()}
+function requireFullPopup(){if(standaloneRole)window.parent.postMessage({type:'quadruzz-require-popup'},'*')}
+function connectingView(){requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" disabled>Connecting to Cross…</button></div>';reportReady()}
+function waitingView(){requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" id="open-hq">Waiting for approval</button></div>';document.querySelector('#open-hq').addEventListener('click',()=>chrome.runtime.sendMessage({type:'quadruzz-open-hq'}));reportReady()}
+function signInView(){requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" id="sign-in">Connect to Cross</button></div>';document.querySelector('#sign-in').addEventListener('click',signIn);reportReady()}
 async function signIn(){connectingView();try{await chrome.runtime.sendMessage({type:'quadruzz-connect'})}catch{signInView()}}
 async function connectionPending(){try{return Boolean((await chrome.runtime.sendMessage({type:'quadruzz-connect-state'}))?.connecting)}catch{return false}}
 async function memberImage(member,token){const key=`${member.userId}:${member.imageVersion}`;if(imageUrls.has(key))return imageUrls.get(key);const response=await fetch(`${BASE}/api/extension/profile-image?user=${encodeURIComponent(member.userId)}&v=${member.imageVersion}`,{headers:{authorization:`Bearer ${token}`}});if(!response.ok)return'';const url=URL.createObjectURL(await response.blob());imageUrls.set(key,url);return url}
 function esc(value){const node=document.createElement('span');node.textContent=value??'';return node.innerHTML}
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
-function closeRolePicker(){pickerOpen=false;roleFilter='';renderMembers()}
+function closeRolePicker(){if(standaloneRole){try{chrome.runtime.sendMessage({type:'quadruzz-close'}).catch(()=>{})}catch{}return}pickerOpen=false;roleFilter='';renderMembers()}
 function viewSignature(){return JSON.stringify({members:latestData?.members,roles:latestData?.roleStatuses,images:latestImages,pendingRole})}
 function rolePickerMarkup(){
   const roles=matchingRoles();
@@ -107,10 +121,10 @@ function renderMembers(){
     const triggerRect=trigger.getBoundingClientRect();
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=triggerRect.bottom;
+    const top=standaloneRole?0:triggerRect.bottom;
     picker.style.top=`${top}px`;
-    picker.style.left=`${memberRect.left+39}px`;
-    picker.style.width=`${memberRect.width-39}px`;
+    picker.style.left=standaloneRole?'0':`${memberRect.left+39}px`;
+    picker.style.width=standaloneRole?'100%':`${memberRect.width-39}px`;
     picker.style.maxHeight=`calc(100vh - ${top}px)`;
     pickerDesiredHeight=top+(matchingRoles().length+1)*24;
   }
@@ -128,6 +142,7 @@ function renderMembers(){
   pickerOpen=false;
   roleFilter='';
   renderMembers();
+  if(standaloneRole)try{chrome.runtime.sendMessage({type:'quadruzz-close'}).catch(()=>{})}catch{}
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
     if(!response.ok)throw new Error();
