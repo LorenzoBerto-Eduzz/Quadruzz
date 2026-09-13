@@ -48,21 +48,28 @@ function ensureFrame() {
         if (event.data.presentationId !== presentationId) return;
         if (revealRequested) {
           const readyPresentationId = presentationId;
+          const readyHeight = Number(event.data.height);
+          if (Number.isFinite(readyHeight)) {
+            frame.style.height = `${Math.min(window.innerHeight - 6, Math.max(24, readyHeight))}px`;
+          }
           if (revealFrame !== null) cancelAnimationFrame(revealFrame);
           revealFrame = requestAnimationFrame(() => {
-            revealFrame = null;
-            if (!revealRequested || readyPresentationId !== presentationId) return;
-            frame.style.display = 'block';
-            frame.style.visibility = 'visible';
-            const needsInputFocus =
-              requestedMode === 'role' ||
-              requestedMode === 'note' ||
-              carriedPanel === 'role' ||
-              carriedPanel === 'note';
-            if (needsInputFocus) {
-              frame.focus({ preventScroll: true });
-              frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
-            }
+            if (!revealRequested || readyPresentationId !== presentationId) { revealFrame = null; return; }
+            revealFrame = requestAnimationFrame(() => {
+              revealFrame = null;
+              if (!revealRequested || readyPresentationId !== presentationId) return;
+              frame.style.display = 'block';
+              frame.style.visibility = 'visible';
+              const needsInputFocus =
+                requestedMode === 'role' ||
+                requestedMode === 'note' ||
+                carriedPanel === 'role' ||
+                carriedPanel === 'note';
+              if (needsInputFocus) {
+                frame.focus({ preventScroll: true });
+                frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
+              }
+            });
           });
         }
       }
@@ -73,6 +80,8 @@ function ensureFrame() {
 
 function show(mode = 'popup', panel = null) {
   presentationId += 1;
+  if (revealFrame !== null) cancelAnimationFrame(revealFrame);
+  revealFrame = null;
   const currentPresentationId = presentationId;
   revealRequested = true;
   const previousMode = requestedMode;
