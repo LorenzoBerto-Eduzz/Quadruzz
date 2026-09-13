@@ -13,6 +13,7 @@ let nextLoadSequence=0;
 let appliedLoadSequence=0;
 let lastRenderSignature='';
 let pickerDesiredHeight=0;
+let roleLayoutFrame=null;
 
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{if(event.repeat||event.code!=='KeyW'||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey)return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:'quadruzz-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
@@ -68,23 +69,31 @@ function bindRolePicker(){
   input.focus();
   input.setSelectionRange(input.value.length,input.value.length);
 }
+function layoutRoleLabels(){
+  if(roleLayoutFrame!==null)cancelAnimationFrame(roleLayoutFrame);
+  roleLayoutFrame=requestAnimationFrame(()=>{
+    roleLayoutFrame=null;
+    document.querySelectorAll('.member').forEach(member=>{
+      const label=member.querySelector('.role-label');
+      const name=member.querySelector('.name-label');
+      if(!label||!name)return;
+      const overlap=Math.max(0,name.getBoundingClientRect().right-label.getBoundingClientRect().left+2);
+      name.style.clipPath=overlap?`inset(0 ${overlap}px 0 0)`:'none';
+    });
+  });
+}
+new ResizeObserver(layoutRoleLabels).observe(document.documentElement);
 function renderMembers(){
   if(!latestData)return;
   document.querySelector('.role-picker')?.remove();
   const rows=latestData.members.map((member,index)=>{
     const self=member.userId===latestData.currentUserId;
     const role=`<span class="role-label">${esc(member.actingState)}</span>`;
-    return `<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}"><img src="${latestImages[index]||''}" alt=""><span class="name${self?' own-zone':''}">${esc(member.displayName)}</span>${self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${role}</button>`:`<span class="state role-display">${role}</span>`}</li>`;
+    return `<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}"><img src="${latestImages[index]||''}" alt=""><span class="name${self?' own-zone':''}"><span class="name-label">${esc(member.displayName)}</span></span>${self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${role}</button>`:`<span class="state role-display">${role}</span>`}</li>`;
   }).join('');
   app.innerHTML=`<ul class="members">${rows}</ul>`;
-  document.querySelectorAll('.member').forEach(member=>{
-    const label=member.querySelector('.role-label');
-    const name=member.querySelector('.name');
-    if(!label||!name)return;
-    label.style.maxWidth=`${Math.max(40,member.getBoundingClientRect().width-48)}px`;
-    const overlap=Math.max(0,name.getBoundingClientRect().right-label.getBoundingClientRect().left+2);
-    name.style.clipPath=overlap?`inset(0 ${overlap}px 0 0)`:'none';
-  });
+  layoutRoleLabels();
+
   const trigger=document.querySelector('.role-trigger');
   if(trigger){
     const togglePicker=()=>{pickerOpen=!pickerOpen;roleFilter='';renderMembers()};
