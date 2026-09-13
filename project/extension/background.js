@@ -169,6 +169,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'quadruzz-account-changing') {
     void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => broadcast('quadruzz-connect-cancelled'));
   }
+  if (message?.type === 'quadruzz-access-requested') void broadcast('quadruzz-access-pending');
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-note-notification') void deliverNoteNotification(message.notification);
   if (message?.type === 'quadruzz-toggle' && acceptShortcut(message.type)) void toggle(sender.tab);

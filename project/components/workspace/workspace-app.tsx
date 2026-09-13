@@ -150,6 +150,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       const next = await prepareWorkspacePayload(localPayload);
       if (serverImageUrl) void decodeProfileImage(serverImageUrl);
       if (requestEpoch.current === epoch) setData(next);
+      if (payload.accessState === 'pending') window.postMessage({ type: 'quadruzz-access-requested' }, window.location.origin);
       return true;
     } catch (cause) { setError(visibleError(cause, 'Profile setup failed. Please try again.')); return false; }
     finally { if (requestEpoch.current === epoch) setBusy(false); }

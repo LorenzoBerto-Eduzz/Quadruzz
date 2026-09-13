@@ -10,7 +10,7 @@ function styleFrame(frame, mode) {
   const roleOnly = mode === 'role';
   const noteOnly = mode === 'note';
   const notificationOnly = mode === 'notification';
-  frame.style.width = roleOnly || noteOnly || notificationOnly ? '161px' : '216px';
+  frame.style.width = roleOnly || noteOnly || notificationOnly ? '193px' : '248px';
   frame.style.right = roleOnly || noteOnly || notificationOnly ? '79px' : '72px';
   frame.style.borderRadius = roleOnly || noteOnly || notificationOnly ? '2px' : '9px';
   frame.style.boxShadow = 'none';
@@ -25,12 +25,20 @@ function ensureFrame() {
     frame.id = FRAME_ID;
     frame.src = chrome.runtime.getURL('popup.html');
     frame.title = 'Cross-Quadruzz';
-    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '216px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'block' });
+    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '248px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'block' });
     (document.body || document.documentElement).append(frame);
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
       if (event.data?.type === 'quadruzz-resize') frame.style.height = `${Math.min(window.innerHeight - 6, Math.max(24, event.data.height))}px`;
+      if (event.data?.type === 'quadruzz-transition-start') {
+        frame.style.opacity = '0';
+        frame.style.pointerEvents = 'none';
+        frame.style.visibility = 'hidden';
+      }
       if (event.data?.type === 'quadruzz-prepare-picker') {
+        frame.style.opacity = '0';
+        frame.style.pointerEvents = 'none';
+        frame.style.visibility = 'hidden';
         frame.style.height = `${window.innerHeight - 6}px`;
         frame.contentWindow?.postMessage({ type: 'quadruzz-picker-prepared' }, '*');
       }
@@ -147,9 +155,10 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 window.addEventListener('message', (event) => {
-  if (location.origin !== 'https://cross-quadruzz.l-busslerberto.chatgpt.site' || event.source !== window || event.origin !== location.origin || event.data?.type !== 'quadruzz-account-changing') return;
+  const messageType = event.data?.type;
+  if (location.origin !== 'https://cross-quadruzz.l-busslerberto.chatgpt.site' || event.source !== window || event.origin !== location.origin || !['quadruzz-account-changing', 'quadruzz-access-requested'].includes(messageType)) return;
   try {
-    const sent = chrome.runtime.sendMessage({ type: 'quadruzz-account-changing' });
+    const sent = chrome.runtime.sendMessage({ type: messageType });
     if (sent?.catch) sent.catch(() => {});
   } catch { /* Extension was reloaded while this page remained open. */ }
 });

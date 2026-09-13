@@ -56,7 +56,7 @@ function notificationHeight(){if(!notifications.length)return 0;return notificat
 function detectNoteNotifications(data){const next=new Map();for(const member of data.members){const version=Number(member.noteUpdatedAt||0);next.set(member.userId,version);if(notesInitialized&&member.userId!==data.currentUserId&&member.note&&version&&knownNoteVersions.get(member.userId)!==version){try{const sent=chrome.runtime.sendMessage({type:'quadruzz-note-notification',notification:{userId:member.userId,displayName:member.displayName,actingState:member.actingState,note:member.note,noteUpdatedAt:version}});if(sent?.catch)sent.catch(()=>{})}catch{/* Extension context closed. */}}}knownNoteVersions.clear();for(const [userId,version] of next)knownNoteVersions.set(userId,version);notesInitialized=true}
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const noteToggle=event.code==='KeyS'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle&&!noteToggle))return;event.preventDefault();event.stopImmediatePropagation();if(overlayVisible&&(roleToggle||noteToggle)){const switchingStandalone=(roleToggle&&standaloneNote)||(noteToggle&&standaloneRole);if(!switchingStandalone){if(roleToggle)requestRolePickerToggle();else requestNoteToggle();return}}try{const type=popupToggle?'quadruzz-toggle':roleToggle?'quadruzz-role-toggle':'quadruzz-note-toggle';const sent=chrome.runtime.sendMessage({type});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
-chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView()});
+chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView();if(message?.type==='quadruzz-access-pending')waitingView()});
 window.addEventListener('message',event=>{
   if(event.source!==parent)return;
   if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
@@ -129,8 +129,9 @@ function esc(value){const node=document.createElement('span');node.textContent=v
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
 function hideOverlayNow(){window.parent.postMessage({type:'quadruzz-hide-now'},'*')}
-function closeRolePicker(){if(standaloneRole){hideOverlayNow();return}pickerOpen=false;roleFilter='';renderMembers()}
-function closeNoteEditor(){if(standaloneNote){hideOverlayNow();return}noteOpen=false;noteDraft='';noteLastValid='';renderMembers()}
+function beginAtomicTransition(){window.parent.postMessage({type:'quadruzz-transition-start'},'*')}
+function closeRolePicker(){if(standaloneRole){hideOverlayNow();return}beginAtomicTransition();pickerOpen=false;roleFilter='';renderMembers()}
+function closeNoteEditor(){if(standaloneNote){hideOverlayNow();return}beginAtomicTransition();noteOpen=false;noteDraft='';noteLastValid='';renderMembers()}
 function preparePanel(panel){pendingPanel=panel;window.parent.postMessage({type:'quadruzz-prepare-picker'},'*')}
 function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}noteOpen=false;selectedRoleIndex=0;roleFilter='';if(standaloneRole){pickerOpen=true;renderMembers();return}preparePanel('role')}
 function requestNoteToggle(){if(noteOpen){closeNoteEditor();return}pickerOpen=false;noteDraft='';noteLastValid='';if(standaloneNote){noteOpen=true;renderMembers();return}preparePanel('note')}
@@ -235,7 +236,7 @@ function bindNoteEditor(){
   noteOpen=false;
   noteDraft='';
   noteLastValid='';
-  if(closingStandalone)hideOverlayNow();else renderMembers();
+  if(closingStandalone)hideOverlayNow();else{beginAtomicTransition();renderMembers()}
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({note})});
     if(!response.ok)throw new Error();
@@ -306,7 +307,7 @@ function renderMembers(){
     const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):Math.round(roleTrigger.closest('.member').getBoundingClientRect().bottom)+2;
     picker.style.top=`${top}px`;
     picker.style.left=standaloneRole?'0':'48px';
-    picker.style.width=standaloneRole?'100%':'161px';
+    picker.style.width=standaloneRole?'100%':'193px';
     picker.style.maxHeight=`calc(100vh - ${top}px)`;
     pickerDesiredHeight=top+(matchingRoles().length+1)*24;
   }else if(noteOpen&&noteTrigger){
@@ -315,7 +316,7 @@ function renderMembers(){
     const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):Math.round(noteTrigger.closest('.member').getBoundingClientRect().bottom)+2;
     editor.style.top=`${top}px`;
     editor.style.left=standaloneNote?'0':'48px';
-    editor.style.width=standaloneNote?'100%':'161px';
+    editor.style.width=standaloneNote?'100%':'193px';
     editor.dataset.top=String(top);
     pickerDesiredHeight=top+18;
   }
@@ -335,7 +336,7 @@ function renderMembers(){
   pickerOpen=false;
   noteOpen=false;
   roleFilter='';
-  if(closingStandalone)hideOverlayNow();else renderMembers();
+  if(closingStandalone)hideOverlayNow();else{beginAtomicTransition();renderMembers()}
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
     if(!response.ok)throw new Error();
