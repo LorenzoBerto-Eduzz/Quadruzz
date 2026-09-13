@@ -77,6 +77,14 @@ function renderMembers(){
     return `<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}"><img src="${latestImages[index]||''}" alt=""><span class="name${self?' own-zone':''}">${esc(member.displayName)}</span>${self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${role}</button>`:`<span class="state role-display">${role}</span>`}</li>`;
   }).join('');
   app.innerHTML=`<ul class="members">${rows}</ul>`;
+  document.querySelectorAll('.member').forEach(member=>{
+    const label=member.querySelector('.role-label');
+    const name=member.querySelector('.name');
+    if(!label||!name)return;
+    label.style.maxWidth=`${Math.max(40,member.getBoundingClientRect().width-48)}px`;
+    const overlap=Math.max(0,name.getBoundingClientRect().right-label.getBoundingClientRect().left+2);
+    name.style.clipPath=overlap?`inset(0 ${overlap}px 0 0)`:'none';
+  });
   const trigger=document.querySelector('.role-trigger');
   if(trigger){
     const togglePicker=()=>{pickerOpen=!pickerOpen;roleFilter='';renderMembers()};
