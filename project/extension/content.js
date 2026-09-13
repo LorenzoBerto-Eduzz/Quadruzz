@@ -30,15 +30,7 @@ function ensureFrame() {
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
       if (event.data?.type === 'quadruzz-resize') frame.style.height = `${Math.min(window.innerHeight - 6, Math.max(24, event.data.height))}px`;
-      if (event.data?.type === 'quadruzz-transition-start') {
-        frame.style.opacity = '0';
-        frame.style.pointerEvents = 'none';
-        frame.style.visibility = 'hidden';
-      }
       if (event.data?.type === 'quadruzz-prepare-picker') {
-        frame.style.opacity = '0';
-        frame.style.pointerEvents = 'none';
-        frame.style.visibility = 'hidden';
         frame.style.height = `${window.innerHeight - 6}px`;
         frame.contentWindow?.postMessage({ type: 'quadruzz-picker-prepared' }, '*');
       }
@@ -177,12 +169,6 @@ window.addEventListener('keydown', (event) => {
   event.preventDefault();
   event.stopImmediatePropagation();
   try {
-    if ((roleToggle || noteToggle) && revealRequested && requestedMode === 'popup') {
-      const frame = ensureFrame();
-      frame.style.height = `${window.innerHeight - 6}px`;
-      frame.contentWindow?.postMessage({ type: roleToggle ? 'quadruzz-role-toggle' : 'quadruzz-note-toggle' }, '*');
-      return;
-    }
     const type = popupToggle ? 'quadruzz-toggle' : roleToggle ? 'quadruzz-role-toggle' : 'quadruzz-note-toggle';
     const sent = chrome.runtime.sendMessage({ type });
     if (sent?.catch) sent.catch(() => {});

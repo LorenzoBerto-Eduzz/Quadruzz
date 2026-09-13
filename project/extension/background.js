@@ -41,6 +41,7 @@ async function clearNoteNotifications(tabId) {
 }
 
 function connectionCallbackUrl() { return `https://${chrome.runtime.id}.chromiumapp.org/quadruzz`; }
+function connectionAuthorizationUrl() { return BASE + '/extension/authorize?redirect_uri=' + encodeURIComponent(connectionCallbackUrl()); }
 
 async function openConnectionTab() {
   await broadcast('quadruzz-connect-started');
@@ -53,8 +54,7 @@ async function openConnectionTab() {
       return;
     } catch { await chrome.storage.session.remove(CONNECT_TAB_KEY); }
   }
-  const redirectUrl = connectionCallbackUrl();
-  const tab = await chrome.tabs.create({ url: `${BASE}/extension/authorize?redirect_uri=${encodeURIComponent(redirectUrl)}`, active: true });
+  const tab = await chrome.tabs.create({ url: connectionAuthorizationUrl(), active: true });
   if (tab.id) await chrome.storage.session.set({ connectTabId: tab.id });
 }
 
@@ -72,6 +72,46 @@ async function completeConnection(tabId, url) {
   return true;
 }
 
+async function ensureAccessCredential() {
+  await broadcast('quadruzz-access-pending');
+  const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
+  if (stored.connectTabId) {
+    try {
+      await chrome.tabs.update(stored.connectTabId, { url: connectionAuthorizationUrl(), active: false });
+      return;
+    } catch { await chrome.storage.session.remove(CONNECT_TAB_KEY); }
+  }
+  const tab = await chrome.tabs.create({ url: connectionAuthorizationUrl(), active: false });
+  if (tab.id) await chrome.storage.session.set({ connectTabId: tab.id });
+}
+
+async function accessState() {
+  try {
+    const stored = await chrome.storage.local.get('token');
+    if (!stored.token) return 'none';
+    const response = await fetch(BASE + '/api/extension', { headers: { authorization: 'Bearer ' + stored.token }, cache: 'no-store' });
+    if (response.status === 401) {
+      await chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']);
+      return 'none';
+    }
+    if (!response.ok) return 'uncertain';
+    const data = await response.json();
+    return data.accessState === 'approved' ? 'approved' : data.accessState === 'pending' ? 'pending' : 'none';
+  } catch { return 'uncertain'; }
+}
+
+async function applyAccessView(tabId, state) {
+  const overlay = await getState();
+  const message = state === 'pending' ? 'quadruzz-access-pending' : state === 'uncertain' ? 'quadruzz-access-checking' : 'quadruzz-connect-cancelled';
+  if (overlay.mode === 'popup') {
+    await broadcast(message);
+    return;
+  }
+  if (overlay.mode !== 'hidden') {
+    await chrome.storage.session.set({ overlayMode: 'hidden', activeTabId: tabId || null });
+    await tell(tabId, 'quadruzz-hide');
+  }
+}
 async function synchronizeActivity() {
   try {
     const stored = await chrome.storage.local.get(['token', 'extensionActivitySessionId']);
@@ -98,18 +138,29 @@ async function toggle(tab) {
   const mode = state.mode === 'popup' ? 'hidden' : 'popup';
   const activeTabId = tab?.id || state.activeTabId;
   const panel = mode === 'popup' && (state.mode === 'role' || state.mode === 'note') ? state.mode : null;
-  if (panel) {
-    await tell(activeTabId, 'quadruzz-suspend');
-    await new Promise((resolve) => setTimeout(resolve, 34));
+  if (mode === 'hidden') {
+    await chrome.storage.session.set({ overlayMode: mode, activeTabId });
+    await tell(activeTabId, 'quadruzz-hide');
+    return;
   }
+  const currentAccess = await accessState();
+  if (panel) await tell(activeTabId, 'quadruzz-suspend');
+  else await tell(activeTabId, 'quadruzz-hide');
+  await new Promise((resolve) => setTimeout(resolve, 34));
   await chrome.storage.session.set({ overlayMode: mode, activeTabId });
-  if (mode === 'popup') await clearNoteNotifications(activeTabId);
-  await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode, panel);
+  await clearNoteNotifications(activeTabId);
+  await broadcast(currentAccess === 'approved' ? 'quadruzz-access-approved' : currentAccess === 'pending' ? 'quadruzz-access-pending' : currentAccess === 'uncertain' ? 'quadruzz-access-checking' : 'quadruzz-connect-cancelled');
+  await tell(activeTabId, 'quadruzz-show', mode, currentAccess === 'approved' ? panel : null);
 }
 
 async function togglePanel(tab, panel) {
   const state = await getState();
   const activeTabId = tab?.id || state.activeTabId;
+  const currentAccess = await accessState();
+  if (currentAccess !== 'approved') {
+    await applyAccessView(activeTabId, currentAccess);
+    return;
+  }
   if (state.mode === 'popup') {
     await tell(activeTabId, panel === 'role' ? 'quadruzz-role-toggle-open' : 'quadruzz-note-toggle-open');
     return;
@@ -118,7 +169,6 @@ async function togglePanel(tab, panel) {
   await chrome.storage.session.set({ overlayMode: mode, activeTabId });
   await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode);
 }
-
 const toggleRole = (tab) => togglePanel(tab, 'role');
 const toggleNote = (tab) => togglePanel(tab, 'note');
 
@@ -169,7 +219,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'quadruzz-account-changing') {
     void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => broadcast('quadruzz-connect-cancelled'));
   }
-  if (message?.type === 'quadruzz-access-requested') void broadcast('quadruzz-access-pending');
+  if (message?.type === 'quadruzz-access-requested') void ensureAccessCredential().catch(() => broadcast('quadruzz-access-pending'));
+  if (message?.type === 'quadruzz-membership-lost') void applyAccessView(sender.tab?.id, 'none');
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-note-notification') void deliverNoteNotification(message.notification);
   if (message?.type === 'quadruzz-toggle' && acceptShortcut(message.type)) void toggle(sender.tab);

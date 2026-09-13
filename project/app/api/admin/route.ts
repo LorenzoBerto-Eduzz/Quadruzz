@@ -41,6 +41,8 @@ export async function POST(request: Request) {
       await db.batch([
         db.prepare("UPDATE members SET status='removed',display_name=NULL,profile_image_key=NULL,last_seen_at=NULL,updated_at=? WHERE user_id=?").bind(now, targetId),
         db.prepare('DELETE FROM presence_sessions WHERE user_id=?').bind(targetId),
+        db.prepare('DELETE FROM extension_sessions WHERE user_id=?').bind(targetId),
+        db.prepare('DELETE FROM extension_credentials WHERE user_id=?').bind(targetId),
       ]);
       await recordActivity(`${target.display_name || 'Member'} went offline — access removed by ${actor.display_name || user.email}`, now);
     } else if (body.action === 'set_board_title') {

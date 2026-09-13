@@ -55,8 +55,8 @@ function notificationMarkup(){if(!notifications.length)return'';return `<div cla
 function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?42:32),0)+(notifications.length-1)*2}
 function detectNoteNotifications(data){const next=new Map();for(const member of data.members){const version=Number(member.noteUpdatedAt||0);next.set(member.userId,version);if(notesInitialized&&member.userId!==data.currentUserId&&member.note&&version&&knownNoteVersions.get(member.userId)!==version){try{const sent=chrome.runtime.sendMessage({type:'quadruzz-note-notification',notification:{userId:member.userId,displayName:member.displayName,actingState:member.actingState,note:member.note,noteUpdatedAt:version}});if(sent?.catch)sent.catch(()=>{})}catch{/* Extension context closed. */}}}knownNoteVersions.clear();for(const [userId,version] of next)knownNoteVersions.set(userId,version);notesInitialized=true}
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
-window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const noteToggle=event.code==='KeyS'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle&&!noteToggle))return;event.preventDefault();event.stopImmediatePropagation();if(overlayVisible&&(roleToggle||noteToggle)){const switchingStandalone=(roleToggle&&standaloneNote)||(noteToggle&&standaloneRole);if(!switchingStandalone){if(roleToggle)requestRolePickerToggle();else requestNoteToggle();return}}try{const type=popupToggle?'quadruzz-toggle':roleToggle?'quadruzz-role-toggle':'quadruzz-note-toggle';const sent=chrome.runtime.sendMessage({type});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
-chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView();if(message?.type==='quadruzz-access-pending')waitingView()});
+window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const noteToggle=event.code==='KeyS'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle&&!noteToggle))return;event.preventDefault();event.stopImmediatePropagation();try{const type=popupToggle?'quadruzz-toggle':roleToggle?'quadruzz-role-toggle':'quadruzz-note-toggle';const sent=chrome.runtime.sendMessage({type});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
+chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started'||message?.type==='quadruzz-access-checking')connectingView();if(message?.type==='quadruzz-connect-complete'||message?.type==='quadruzz-access-approved')void loadMembers(true);if(message?.type==='quadruzz-connect-cancelled')signInView();if(message?.type==='quadruzz-access-pending')waitingView()});
 window.addEventListener('message',event=>{
   if(event.source!==parent)return;
   if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
@@ -129,9 +129,8 @@ function esc(value){const node=document.createElement('span');node.textContent=v
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
 function hideOverlayNow(){window.parent.postMessage({type:'quadruzz-hide-now'},'*')}
-function beginAtomicTransition(){window.parent.postMessage({type:'quadruzz-transition-start'},'*')}
-function closeRolePicker(){if(standaloneRole){hideOverlayNow();return}beginAtomicTransition();pickerOpen=false;roleFilter='';renderMembers()}
-function closeNoteEditor(){if(standaloneNote){hideOverlayNow();return}beginAtomicTransition();noteOpen=false;noteDraft='';noteLastValid='';renderMembers()}
+function closeRolePicker(){if(standaloneRole){hideOverlayNow();return}pickerOpen=false;roleFilter='';renderMembers()}
+function closeNoteEditor(){if(standaloneNote){hideOverlayNow();return}noteOpen=false;noteDraft='';noteLastValid='';renderMembers()}
 function preparePanel(panel){pendingPanel=panel;window.parent.postMessage({type:'quadruzz-prepare-picker'},'*')}
 function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}noteOpen=false;selectedRoleIndex=0;roleFilter='';if(standaloneRole){pickerOpen=true;renderMembers();return}preparePanel('role')}
 function requestNoteToggle(){if(noteOpen){closeNoteEditor();return}pickerOpen=false;noteDraft='';noteLastValid='';if(standaloneNote){noteOpen=true;renderMembers();return}preparePanel('note')}
@@ -236,7 +235,7 @@ function bindNoteEditor(){
   noteOpen=false;
   noteDraft='';
   noteLastValid='';
-  if(closingStandalone)hideOverlayNow();else{beginAtomicTransition();renderMembers()}
+  if(closingStandalone)hideOverlayNow();else{renderMembers()}
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({note})});
     if(!response.ok)throw new Error();
@@ -336,7 +335,7 @@ function renderMembers(){
   pickerOpen=false;
   noteOpen=false;
   roleFilter='';
-  if(closingStandalone)hideOverlayNow();else{beginAtomicTransition();renderMembers()}
+  if(closingStandalone)hideOverlayNow();else{renderMembers()}
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
     if(!response.ok)throw new Error();
@@ -357,11 +356,11 @@ async function loadMembers(forceRender=false){
     const{token}=await storage.get('token');
     if(!token){if(await connectionPending())connectingView();else signInView();return}
     const response=await api('/api/extension');
-    if(response.status===401){if(await connectionPending())connectingView();else signInView();return}
+    if(response.status===401){latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}if(await connectionPending())connectingView();else signInView();return}
     if(!response.ok)throw new Error();
     const data=await response.json();
-    if(data.accessState==='pending'){waitingView();return}
-    if(data.accessState!=='approved'){await storage.remove('token');signInView();return}
+    if(data.accessState==='pending'){latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;waitingView();return}
+    if(data.accessState!=='approved'){latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;await storage.remove('token');try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}signInView();return}
     await pulseActivity();
     data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));
     const images=await Promise.all(data.members.map(member=>memberImage(member,token)));
@@ -385,5 +384,5 @@ async function loadMembers(forceRender=false){
 new ResizeObserver(reportSize).observe(document.body);
 try{const started=chrome.runtime.sendMessage({type:'quadruzz-authenticated'});if(started?.catch)started.catch(()=>{})}catch{/* The background alarm will retry. */}
 void loadMembers();
-refreshTimer=setInterval(loadMembers,1000);
+refreshTimer=setInterval(loadMembers,250);
 window.addEventListener('pagehide',()=>{stopped=true;if(refreshTimer)clearInterval(refreshTimer)});
