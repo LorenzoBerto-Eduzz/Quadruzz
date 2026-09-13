@@ -48,6 +48,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 - Use empty image alternative text and hide a failed image element so broken-image icons or member-name fallback text never appear in a profile circle.
 - The root server-renders the authenticated workspace payload, orders/dims members from canonical extension activity, starts visible-image downloads immediately, reveals circles together after decode, and preloads inactive images in the background. Settings remain scrollable without a visible scrollbar.
 - Settings cover profile editing, profile reset/deletion, sign-out, and member-visible request decisions. Host-only administration covers member removal and clearing test data; there is no admin-role management.
+- Host-only test-data clearing is a complete fresh-start reset: it removes all non-host memberships, requests, presence and extension sessions, extension credentials/pairings, shared role options, notes, board state, activity logs, and stored profile images. It retains only the permanent host identity row with an empty profile so the host re-enters through profile setup.
 - Dragging and saved coordinates come later.
 - `docs/PRODUCT_SPEC.md` is the focused authoritative specification.
 

@@ -56,6 +56,7 @@ The host cannot be removed and never needs approval. Members may manage requests
 - Removing a member revokes their access, clears their profile image and profile fields, and requires that same OpenAI account to request and receive approval again before re-entering.
 - The host account cannot be removed.
 - Settings also support profile reset/deletion and sign-out.
+- The host-only fresh-start reset clears all non-host memberships, access requests, presence and extension sessions, extension credentials/pairings, shared acting-status options, notes, board state, activity logs, and profile images. Only the permanent host identity row remains, with its profile cleared for setup again.
 - Canonical activity is tied to an authorized Companion running in the browser, not to an open/focused HQ page and not to overlay visibility.
 - Approved Companion-active members are vivid and sorted first in join order. All other approved members remain listed afterward and dimmed.
 - Successful authenticated Companion member-list reads count as activity and renew a D1 extension session when needed. This read-as-proof rule is required because Chrome can suspend Manifest V3 service workers and suppress separate background heartbeat POSTs. Popup/background heartbeat POSTs remain redundant fallbacks.

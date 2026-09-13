@@ -50,15 +50,19 @@ export async function POST(request: Request) {
     } else if (body.action === 'clear_test_data') {
       if (actor.role !== 'host') throw new Error('Only the host can clear test data.');
       const objects = await getFiles().list({ prefix: 'profiles/' });
-      const hostPrefix = `profiles/${user.userId}/`;
-      const keys = objects.objects.map((item) => item.key).filter((key) => !key.startsWith(hostPrefix));
+      const keys = objects.objects.map((item) => item.key);
       const pendingObjects = await getFiles().list({ prefix: 'pending-profiles/' });
       keys.push(...pendingObjects.objects.map((item) => item.key));
       if (keys.length) await getFiles().delete(keys);
       await db.batch([
         db.prepare("DELETE FROM members WHERE role!='host'"),
+        db.prepare("UPDATE members SET display_name=NULL,profile_image_key=NULL,acting_state='chat',note=NULL,note_updated_at=NULL,last_seen_at=NULL,updated_at=? WHERE role='host'").bind(now),
         db.prepare('DELETE FROM access_requests'),
-        db.prepare('DELETE FROM presence_sessions WHERE user_id!=?').bind(user.userId),
+        db.prepare('DELETE FROM presence_sessions'),
+        db.prepare('DELETE FROM extension_pairing_codes'),
+        db.prepare('DELETE FROM extension_credentials'),
+        db.prepare('DELETE FROM extension_sessions'),
+        db.prepare('DELETE FROM role_statuses'),
         db.prepare('DELETE FROM board_state'),
         db.prepare('DELETE FROM activity_log'),
       ]);
