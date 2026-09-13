@@ -11,6 +11,8 @@ let savingRole=false;
 let pendingRole=null;
 let nextLoadSequence=0;
 let appliedLoadSequence=0;
+let lastRenderSignature='';
+let pickerDesiredHeight=0;
 
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{if(event.repeat||event.code!=='KeyW'||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey)return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:'quadruzz-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
@@ -20,7 +22,7 @@ document.addEventListener('pointerdown',event=>{if(pickerOpen&&!event.target.clo
 
 function storageCall(method,value){return new Promise((resolve,reject)=>{try{chrome.storage.local[method](value,result=>{try{const failure=chrome.runtime.lastError;if(failure)reject(new Error(failure.message));else resolve(result)}catch(error){reject(error)}})}catch(error){reject(error)}})}
 const storage={get:key=>storageCall('get',key),set:value=>storageCall('set',value),remove:key=>storageCall('remove',key)};
-function reportSize(){window.parent.postMessage({type:'quadruzz-resize',height:document.body.scrollHeight},'*')}
+function reportSize(){const base=document.querySelector('header').offsetHeight+app.scrollHeight;window.parent.postMessage({type:'quadruzz-resize',height:Math.max(base,pickerDesiredHeight)},'*')}
 function reportReady(){reportSize();window.parent.postMessage({type:'quadruzz-ready'},'*')}
 async function api(path,options={}){const{token}=await storage.get('token');const headers={...(options.headers||{}),...(token?{authorization:`Bearer ${token}`}:{})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove('token');return response}
 async function pulseActivity(){try{const stored=await storage.get(['token','extensionActivitySessionId','extensionActivityPulseAt']);if(!stored.token)return;const now=Date.now();if(now-(stored.extensionActivityPulseAt||0)<15000)return;const extensionSessionId=stored.extensionActivitySessionId||crypto.randomUUID();await storage.set({extensionActivitySessionId,extensionActivityPulseAt:now});const response=await fetch(`${BASE}/api/extension`,{method:'POST',headers:{authorization:`Bearer ${stored.token}`,'content-type':'application/json'},body:JSON.stringify({extensionAction:'heartbeat',extensionSessionId})});if(response.status===401)await storage.remove(['token','extensionActivityPulseAt']);else if(!response.ok)await storage.remove('extensionActivityPulseAt')}catch(error){if(!stopInvalidContext(error))try{await storage.remove('extensionActivityPulseAt')}catch{/* The next member refresh retries. */}}}
@@ -34,13 +36,12 @@ function esc(value){const node=document.createElement('span');node.textContent=v
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
 function closeRolePicker(){pickerOpen=false;roleFilter='';renderMembers()}
-function rolePickerMarkup(memberIndex){
+function viewSignature(){return JSON.stringify({members:latestData?.members,roles:latestData?.roleStatuses,images:latestImages,pendingRole})}
+function rolePickerMarkup(){
   const roles=matchingRoles();
-  return `<li class="role-picker" style="top:${(memberIndex+1)*42}px"><input id="role-filter" maxlength="30" value="${esc(roleFilter)}" aria-label="Find or create role status" autocomplete="off" spellcheck="false"><div class="role-options">${roles.map((role,index)=>`<button class="role-option" data-index="${index}" type="button">${esc(role)}</button>`).join('')}</div></li>`;
+  return `<div class="role-picker"><input id="role-filter" maxlength="30" value="${esc(roleFilter)}" aria-label="Find or create role status" autocomplete="off" spellcheck="false"><div class="role-options">${roles.map((role,index)=>`<button class="role-option" data-index="${index}" type="button">${esc(role)}</button>`).join('')}</div></div>`;
 }
 function bindRolePicker(){
-  const trigger=document.querySelector('.role-trigger');
-  if(trigger)trigger.addEventListener('click',()=>{pickerOpen=!pickerOpen;roleFilter='';renderMembers()});
   if(!pickerOpen)return;
   const input=document.querySelector('#role-filter');
   const options=()=>[...document.querySelectorAll('.role-option')];
@@ -69,17 +70,37 @@ function bindRolePicker(){
 }
 function renderMembers(){
   if(!latestData)return;
-  const selfIndex=latestData.members.findIndex(member=>member.userId===latestData.currentUserId);
+  document.querySelector('.role-picker')?.remove();
   const rows=latestData.members.map((member,index)=>{
     const self=member.userId===latestData.currentUserId;
-    const row=`<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}"><img src="${latestImages[index]||''}" alt=""><span class="name${self?' own-zone':''}">${esc(member.displayName)}</span>${self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${esc(member.actingState)}</button>`:`<span class="state">${esc(member.actingState)}</span>`}</li>`;
-    return row;
+    const role=`<span class="role-label">${esc(member.actingState)}</span>`;
+    return `<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}"><img src="${latestImages[index]||''}" alt=""><span class="name${self?' own-zone':''}">${esc(member.displayName)}</span>${self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${role}</button>`:`<span class="state role-display">${role}</span>`}</li>`;
   }).join('');
-  app.innerHTML=`<ul class="members">${rows}${pickerOpen&&selfIndex>=0?rolePickerMarkup(selfIndex):''}</ul>`;
+  app.innerHTML=`<ul class="members">${rows}</ul>`;
+  const trigger=document.querySelector('.role-trigger');
+  if(trigger){
+    const togglePicker=()=>{pickerOpen=!pickerOpen;roleFilter='';renderMembers()};
+    trigger.addEventListener('pointerdown',event=>{event.preventDefault();togglePicker()});
+    trigger.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePicker()}});
+  }
+  pickerDesiredHeight=0;
+  if(pickerOpen&&trigger){
+    const member=trigger.closest('.member');
+    const memberRect=member.getBoundingClientRect();
+    const triggerRect=trigger.getBoundingClientRect();
+    document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
+    const picker=document.querySelector('.role-picker');
+    const top=triggerRect.bottom;
+    picker.style.top=`${top}px`;
+    picker.style.left=`${memberRect.left+39}px`;
+    picker.style.width=`${memberRect.width-39}px`;
+    picker.style.maxHeight=`calc(100vh - ${top}px)`;
+    pickerDesiredHeight=top+(matchingRoles().length+1)*24;
+  }
+  lastRenderSignature=viewSignature();
   bindRolePicker();
   reportReady();
-}
-async function chooseRole(value,create){
+}async function chooseRole(value,create){
   const label=String(value||'').trim().replace(/\s+/g,' ');
   if(!label||label.length>30||savingRole)return;
   savingRole=true;
@@ -127,7 +148,7 @@ async function loadMembers(forceRender=false){
     }
     latestData=data;
     latestImages=images;
-    if(!pickerOpen||forceRender)renderMembers();
+    if(!pickerOpen&&(forceRender||viewSignature()!==lastRenderSignature))renderMembers();
   }catch(error){if(stopInvalidContext(error))return;reportReady()}
 }
 new ResizeObserver(reportSize).observe(document.body);
