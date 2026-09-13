@@ -10,6 +10,12 @@ export function OPTIONS() { return new Response(null, { status: 204, headers: co
 function validPresenceSessionId(value: string | null | undefined): value is string {
   return typeof value === 'string' && /^[a-zA-Z0-9-]{16,80}$/.test(value);
 }
+function normalizeRoleStatus(value: unknown): { key: string; label: string } | null {
+  if (typeof value !== 'string') return null;
+  const label = value.trim().replace(/\s+/g, ' ');
+  if (!label || label.length > 30 || /[\u0000-\u001f\u007f]/.test(label)) return null;
+  return { key: label.toLocaleLowerCase('en-US'), label };
+}
 
 export async function GET(request: Request) {
   try {
@@ -31,7 +37,8 @@ export async function GET(request: Request) {
       members.sort((a, b) => Number(Boolean(b.extensionActive)) - Number(Boolean(a.extensionActive)));
     }
     for (const member of members) delete member.extensionLastSeen;
-    return reply({ accessState: 'approved', currentUserId: userId, members });
+    const roleStatuses = (await db.prepare('SELECT label FROM role_statuses ORDER BY label COLLATE NOCASE, key').all<{ label: string }>()).results.map((row) => row.label);
+    return reply({ accessState: 'approved', currentUserId: userId, members, roleStatuses });
   } catch { return reply({ error: 'Quadruzz is temporarily unavailable.' }, 503); }
 }
 
@@ -41,7 +48,7 @@ export async function POST(request: Request) {
     if (!userId) return reply({ error: 'Extension authorization required.' }, 401);
     const approved = await getDb().prepare("SELECT 1 FROM members WHERE user_id=? AND status='approved'").bind(userId).first();
     if (!approved) return reply({ error: 'Approved membership required.' }, 403);
-    const body = await request.json() as { actingState?: string; note?: string | null; extensionAction?: 'heartbeat'; extensionSessionId?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
+    const body = await request.json() as { actingState?: string; createActingState?: boolean; note?: string | null; extensionAction?: 'heartbeat'; extensionSessionId?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
     if (body.extensionAction === 'heartbeat') {
       const sessionId = body.extensionSessionId?.trim();
       if (!validPresenceSessionId(sessionId)) return reply({ error: 'Invalid extension session.' }, 400);
@@ -58,14 +65,24 @@ export async function POST(request: Request) {
       else await markSessionClosed(userId, sessionId, member.display_name || 'Member', now);
       return reply({ ok: true });
     }
-    if (body.actingState !== undefined && body.actingState !== 'chat' && body.actingState !== 'ticket') return reply({ error: 'Invalid acting state.' }, 400);
     const note = body.note === undefined ? undefined : body.note?.trim() || null;
     if (note && note.length > 280) return reply({ error: 'Note must be 280 characters or fewer.' }, 400);
     if (body.actingState === undefined && body.note === undefined) return reply({ error: 'Nothing to update.' }, 400);
     const db = getDb();
-    if (body.actingState !== undefined && body.note !== undefined) await db.prepare('UPDATE members SET acting_state=?,note=? WHERE user_id=?').bind(body.actingState, note, userId).run();
-    else if (body.actingState !== undefined) await db.prepare('UPDATE members SET acting_state=? WHERE user_id=?').bind(body.actingState, userId).run();
+    let actingState: string | undefined;
+    if (body.actingState !== undefined) {
+      const normalized = normalizeRoleStatus(body.actingState);
+      if (!normalized) return reply({ error: 'Role status must be 1–30 characters.' }, 400);
+      if (body.createActingState) {
+        await db.prepare('INSERT OR IGNORE INTO role_statuses (key,label,created_by,created_at) VALUES (?,?,?,?)').bind(normalized.key, normalized.label, userId, Date.now()).run();
+      }
+      const roleStatus = await db.prepare('SELECT label FROM role_statuses WHERE key=?').bind(normalized.key).first<{ label: string }>();
+      if (!roleStatus) return reply({ error: 'Unknown role status.' }, 400);
+      actingState = roleStatus.label;
+    }
+    if (actingState !== undefined && body.note !== undefined) await db.prepare('UPDATE members SET acting_state=?,note=? WHERE user_id=?').bind(actingState, note, userId).run();
+    else if (actingState !== undefined) await db.prepare('UPDATE members SET acting_state=? WHERE user_id=?').bind(actingState, userId).run();
     else await db.prepare('UPDATE members SET note=? WHERE user_id=?').bind(note, userId).run();
-    return reply({ ok: true });
+    return reply({ ok: true, actingState });
   } catch { return reply({ error: 'Update failed.' }, 400); }
 }

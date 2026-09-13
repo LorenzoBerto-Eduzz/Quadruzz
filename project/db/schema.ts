@@ -8,7 +8,7 @@ export const members = sqliteTable('members', {
   joinOrder: integer('join_order').notNull().unique(),
   displayName: text('display_name'),
   profileImageKey: text('profile_image_key'),
-  actingState: text('acting_state', { enum: ['chat', 'ticket'] }).notNull().default('chat'),
+  actingState: text('acting_state').notNull().default('chat'),
   note: text('note'),
   lastSeenAt: integer('last_seen_at'),
   createdAt: integer('created_at').notNull(),
@@ -57,3 +57,9 @@ export const extensionCredentials = sqliteTable('extension_credentials', {
 export const extensionSessions = sqliteTable('extension_sessions', {
   sessionId: text('session_id').primaryKey(), userId: text('user_id').notNull(), lastSeenAt: integer('last_seen_at').notNull(),
 }, (table) => [index('extension_sessions_user_seen_idx').on(table.userId, table.lastSeenAt)]);
+export const roleStatuses = sqliteTable('role_statuses', {
+  key: text('key').primaryKey(),
+  label: text('label').notNull(),
+  createdBy: text('created_by').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
