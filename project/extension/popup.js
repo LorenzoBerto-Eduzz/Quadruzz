@@ -298,20 +298,18 @@ function renderMembers(){
   const notificationsHeight=notificationHeight();
   pickerDesiredHeight=notificationsHeight;
   if(pickerOpen&&roleTrigger){
-    const selfIndex=latestData.members.findIndex(member=>member.userId===latestData.currentUserId);
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):18+(selfIndex+1)*42+2;
+    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):Math.round(roleTrigger.closest('.member').getBoundingClientRect().bottom)+2;
     picker.style.top=`${top}px`;
     picker.style.left=standaloneRole?'0':'48px';
     picker.style.width=standaloneRole?'100%':'161px';
     picker.style.maxHeight=`calc(100vh - ${top}px)`;
     pickerDesiredHeight=top+(matchingRoles().length+1)*24;
   }else if(noteOpen&&noteTrigger){
-    const selfIndex=latestData.members.findIndex(member=>member.userId===latestData.currentUserId);
     document.body.insertAdjacentHTML('beforeend',noteEditorMarkup());
     const editor=document.querySelector('.note-editor');
-    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):18+(selfIndex+1)*42+2;
+    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):Math.round(noteTrigger.closest('.member').getBoundingClientRect().bottom)+2;
     editor.style.top=`${top}px`;
     editor.style.left=standaloneNote?'0':'48px';
     editor.style.width=standaloneNote?'100%':'161px';

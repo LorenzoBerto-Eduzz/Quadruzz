@@ -4,6 +4,7 @@ let requestedMode = 'popup';
 let frameReady = false;
 let presentationId = 0;
 let carriedPanel = null;
+let revealFrame = null;
 
 function styleFrame(frame, mode) {
   const roleOnly = mode === 'role';
@@ -46,17 +47,23 @@ function ensureFrame() {
         if (firstReady) { notifyMode(frame); return; }
         if (event.data.presentationId !== presentationId) return;
         if (revealRequested) {
-          frame.style.display = 'block';
-          frame.style.visibility = 'visible';
-          const needsInputFocus =
-            requestedMode === 'role' ||
-            requestedMode === 'note' ||
-            carriedPanel === 'role' ||
-            carriedPanel === 'note';
-          if (needsInputFocus) {
-            frame.focus({ preventScroll: true });
-            frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
-          }
+          const readyPresentationId = presentationId;
+          if (revealFrame !== null) cancelAnimationFrame(revealFrame);
+          revealFrame = requestAnimationFrame(() => {
+            revealFrame = null;
+            if (!revealRequested || readyPresentationId !== presentationId) return;
+            frame.style.display = 'block';
+            frame.style.visibility = 'visible';
+            const needsInputFocus =
+              requestedMode === 'role' ||
+              requestedMode === 'note' ||
+              carriedPanel === 'role' ||
+              carriedPanel === 'note';
+            if (needsInputFocus) {
+              frame.focus({ preventScroll: true });
+              frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
+            }
+          });
         }
       }
     });
@@ -93,6 +100,10 @@ function show(mode = 'popup', panel = null) {
 function hide() {
   presentationId += 1;
   revealRequested = false;
+  requestedMode = 'hidden';
+  carriedPanel = null;
+  if (revealFrame !== null) cancelAnimationFrame(revealFrame);
+  revealFrame = null;
   const frame = document.getElementById(FRAME_ID);
   if (frame) {
     frame.style.visibility = 'hidden';
