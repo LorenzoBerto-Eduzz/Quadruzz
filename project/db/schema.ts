@@ -10,6 +10,7 @@ export const members = sqliteTable('members', {
   profileImageKey: text('profile_image_key'),
   actingState: text('acting_state').notNull().default('chat'),
   note: text('note'),
+  noteUpdatedAt: integer('note_updated_at'),
   lastSeenAt: integer('last_seen_at'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),

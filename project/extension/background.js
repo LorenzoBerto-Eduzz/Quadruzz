@@ -79,17 +79,20 @@ async function toggle(tab) {
   await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode);
 }
 
-async function toggleRole(tab) {
+async function togglePanel(tab, panel) {
   const state = await getState();
   const activeTabId = tab?.id || state.activeTabId;
   if (state.mode === 'popup') {
-    await tell(activeTabId, 'quadruzz-role-toggle-open');
+    await tell(activeTabId, panel === 'role' ? 'quadruzz-role-toggle-open' : 'quadruzz-note-toggle-open');
     return;
   }
-  const mode = state.mode === 'role' ? 'hidden' : 'role';
+  const mode = state.mode === panel ? 'hidden' : panel;
   await chrome.storage.session.set({ overlayMode: mode, activeTabId });
   await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode);
 }
+
+const toggleRole = (tab) => togglePanel(tab, 'role');
+const toggleNote = (tab) => togglePanel(tab, 'note');
 
 chrome.runtime.onStartup.addListener(() => { void resetState(); void startActivityHeartbeat(); });
 chrome.runtime.onInstalled.addListener(() => { void resetState(); void startActivityHeartbeat(); });
@@ -137,6 +140,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
   if (message?.type === 'quadruzz-role-toggle') void toggleRole(sender.tab);
+  if (message?.type === 'quadruzz-note-toggle') void toggleNote(sender.tab);
   if (message?.type === 'quadruzz-force-popup') {
     void chrome.storage.session.set({ overlayMode: 'popup', activeTabId: sender.tab?.id }).then(() => tell(sender.tab?.id, 'quadruzz-show', 'popup'));
   }

@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       return reply({ accessState: pending ? 'pending' : 'not_requested' });
     }
     await expireStaleExtensionSessions(now);
-    const members = (await db.prepare(`SELECT m.user_id AS userId,m.display_name AS displayName,m.updated_at AS imageVersion,m.acting_state AS actingState,m.note,MAX(e.last_seen_at) AS extensionLastSeen,MAX(CASE WHEN e.last_seen_at>=? THEN 1 ELSE 0 END) AS extensionActive FROM members m LEFT JOIN extension_sessions e ON e.user_id=m.user_id WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL GROUP BY m.user_id ORDER BY extensionActive DESC,m.join_order ASC`).bind(now - EXTENSION_ACTIVE_AFTER_MS).all()).results as Array<Record<string, unknown>>;
+    const members = (await db.prepare(`SELECT m.user_id AS userId,m.display_name AS displayName,m.updated_at AS imageVersion,m.acting_state AS actingState,m.note,m.note_updated_at AS noteUpdatedAt,MAX(e.last_seen_at) AS extensionLastSeen,MAX(CASE WHEN e.last_seen_at>=? THEN 1 ELSE 0 END) AS extensionActive FROM members m LEFT JOIN extension_sessions e ON e.user_id=m.user_id WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL GROUP BY m.user_id ORDER BY extensionActive DESC,m.join_order ASC`).bind(now - EXTENSION_ACTIVE_AFTER_MS).all()).results as Array<Record<string, unknown>>;
     const viewer = members.find((member) => member.userId === userId);
     if (viewer && Number(viewer.extensionLastSeen || 0) < now - 30_000) {
       await db.prepare('INSERT INTO extension_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(`reader:${userId}`, userId, now).run();
@@ -65,8 +65,9 @@ export async function POST(request: Request) {
       else await markSessionClosed(userId, sessionId, member.display_name || 'Member', now);
       return reply({ ok: true });
     }
-    const note = body.note === undefined ? undefined : body.note?.trim() || null;
-    if (note && note.length > 280) return reply({ error: 'Note must be 280 characters or fewer.' }, 400);
+    const note = body.note === undefined
+      ? undefined
+      : body.note?.trim().replace(/\r\n?/g, '\n') || null;
     if (body.actingState === undefined && body.note === undefined) return reply({ error: 'Nothing to update.' }, 400);
     const db = getDb();
     let actingState: string | undefined;
@@ -80,9 +81,10 @@ export async function POST(request: Request) {
       if (!roleStatus) return reply({ error: 'Unknown role status.' }, 400);
       actingState = roleStatus.label;
     }
-    if (actingState !== undefined && body.note !== undefined) await db.prepare('UPDATE members SET acting_state=?,note=? WHERE user_id=?').bind(actingState, note, userId).run();
+    const noteUpdatedAt = body.note === undefined ? undefined : Date.now();
+    if (actingState !== undefined && body.note !== undefined) await db.prepare('UPDATE members SET acting_state=?,note=?,note_updated_at=? WHERE user_id=?').bind(actingState, note, noteUpdatedAt, userId).run();
     else if (actingState !== undefined) await db.prepare('UPDATE members SET acting_state=? WHERE user_id=?').bind(actingState, userId).run();
-    else await db.prepare('UPDATE members SET note=? WHERE user_id=?').bind(note, userId).run();
-    return reply({ ok: true, actingState });
+    else await db.prepare('UPDATE members SET note=?,note_updated_at=? WHERE user_id=?').bind(note, noteUpdatedAt, userId).run();
+    return reply({ ok: true, actingState, note, noteUpdatedAt });
   } catch { return reply({ error: 'Update failed.' }, 400); }
 }
