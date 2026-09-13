@@ -17,12 +17,14 @@ let roleLayoutFrame=null;
 let standaloneRole=false;
 
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
-window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle))return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:popupToggle?'quadruzz-toggle':'quadruzz-role-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
+window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle))return;event.preventDefault();event.stopImmediatePropagation();if(roleToggle){requestRolePickerToggle();return}try{const sent=chrome.runtime.sendMessage({type:'quadruzz-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
 chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView()});
 window.addEventListener('message',event=>{
   if(event.source!==parent)return;
   if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
-  if(event.data?.type==='quadruzz-role-toggle'){pickerOpen=!pickerOpen;roleFilter='';renderMembers();return}
+  if(event.data?.type==='quadruzz-role-toggle'){requestRolePickerToggle();return}
+  if(event.data?.type==='quadruzz-picker-prepared'){if(!pickerOpen){pickerOpen=true;roleFilter='';renderMembers()}return}
+  if(event.data?.type==='quadruzz-overlay-hidden'){pickerOpen=false;roleFilter='';pickerDesiredHeight=0;document.querySelector('.role-picker')?.remove();return}
   if(event.data?.type==='quadruzz-overlay-mode'){
     const wasStandalone=standaloneRole;
     standaloneRole=event.data.mode==='role';
@@ -50,7 +52,9 @@ async function memberImage(member,token){const key=`${member.userId}:${member.im
 function esc(value){const node=document.createElement('span');node.textContent=value??'';return node.innerHTML}
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
-function closeRolePicker(){if(standaloneRole){try{chrome.runtime.sendMessage({type:'quadruzz-close'}).catch(()=>{})}catch{}return}pickerOpen=false;roleFilter='';renderMembers()}
+function hideOverlayNow(){window.parent.postMessage({type:'quadruzz-hide-now'},'*')}
+function closeRolePicker(){if(standaloneRole){hideOverlayNow();return}pickerOpen=false;roleFilter='';renderMembers()}
+function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}if(standaloneRole){pickerOpen=true;roleFilter='';renderMembers();return}window.parent.postMessage({type:'quadruzz-prepare-picker'},'*')}
 function viewSignature(){return JSON.stringify({members:latestData?.members,roles:latestData?.roleStatuses,images:latestImages,pendingRole})}
 function rolePickerMarkup(){
   const roles=matchingRoles();
@@ -110,7 +114,7 @@ function renderMembers(){
 
   const trigger=document.querySelector('.role-trigger');
   if(trigger){
-    const togglePicker=()=>{pickerOpen=!pickerOpen;roleFilter='';renderMembers()};
+    const togglePicker=()=>requestRolePickerToggle();
     trigger.addEventListener('pointerdown',event=>{event.preventDefault();togglePicker()});
     trigger.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();togglePicker()}});
   }
@@ -142,7 +146,7 @@ function renderMembers(){
   const closingStandalone=standaloneRole;
   pickerOpen=false;
   roleFilter='';
-  if(closingStandalone){try{chrome.runtime.sendMessage({type:'quadruzz-close'}).catch(()=>{})}catch{}}else renderMembers();
+  if(closingStandalone)hideOverlayNow();else renderMembers();
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
     if(!response.ok)throw new Error();

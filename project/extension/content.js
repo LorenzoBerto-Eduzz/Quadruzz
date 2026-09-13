@@ -5,7 +5,8 @@ let frameReady = false;
 
 function styleFrame(frame, mode) {
   const roleOnly = mode === 'role';
-  frame.style.width = roleOnly ? '177px' : '216px';
+  frame.style.width = roleOnly ? '163px' : '216px';
+  frame.style.right = roleOnly ? '79px' : '72px';
   frame.style.borderRadius = roleOnly ? '2px' : '9px';
   frame.style.boxShadow = roleOnly ? 'none' : '0 14px 38px rgba(0,0,0,.4)';
 }
@@ -24,6 +25,14 @@ function ensureFrame() {
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
       if (event.data?.type === 'quadruzz-resize') frame.style.height = `${Math.min(window.innerHeight - 6, Math.max(24, event.data.height))}px`;
+      if (event.data?.type === 'quadruzz-prepare-picker') {
+        frame.style.height = `${window.innerHeight - 6}px`;
+        frame.contentWindow?.postMessage({ type: 'quadruzz-picker-prepared' }, '*');
+      }
+      if (event.data?.type === 'quadruzz-hide-now') {
+        hide();
+        try { chrome.runtime.sendMessage({ type: 'quadruzz-close' }).catch(() => {}); } catch {}
+      }
       if (event.data?.type === 'quadruzz-picker-visibility') frame.style.boxShadow = event.data.visible ? 'none' : (requestedMode === 'role' ? 'none' : '0 14px 38px rgba(0,0,0,.4)');
       if (event.data?.type === 'quadruzz-require-popup') {
         try { chrome.runtime.sendMessage({ type: 'quadruzz-force-popup' }).catch(() => {}); } catch {}
@@ -40,9 +49,11 @@ function ensureFrame() {
 
 function show(mode = 'popup') {
   revealRequested = true;
+  const previousMode = requestedMode;
   requestedMode = mode;
   const frame = ensureFrame();
   styleFrame(frame, mode);
+  if (mode === 'role' || (previousMode === 'role' && mode === 'popup')) frame.style.height = `${window.innerHeight - 6}px`;
   notifyMode(frame);
   if (frameReady) frame.style.display = 'block';
 }
@@ -50,7 +61,10 @@ function show(mode = 'popup') {
 function hide() {
   revealRequested = false;
   const frame = document.getElementById(FRAME_ID);
-  if (frame) frame.style.display = 'none';
+  if (frame) {
+    frame.style.display = 'none';
+    frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-hidden' }, '*');
+  }
 }
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'quadruzz-show') show(message.mode);
@@ -79,6 +93,15 @@ window.addEventListener('keydown', (event) => {
   event.preventDefault();
   event.stopImmediatePropagation();
   try {
+    if (roleToggle && revealRequested && requestedMode === 'popup') {
+      const frame = ensureFrame();
+      frame.style.height = `${window.innerHeight - 6}px`;
+      frame.contentWindow?.postMessage({ type: 'quadruzz-role-toggle' }, '*');
+      return;
+    }
+    if (roleToggle && revealRequested && requestedMode === 'role') hide();
+    else if (roleToggle && !revealRequested) show('role');
+    else if (popupToggle && revealRequested && requestedMode === 'popup') hide();
     const sent = chrome.runtime.sendMessage({ type: popupToggle ? 'quadruzz-toggle' : 'quadruzz-role-toggle' });
     if (sent?.catch) sent.catch(() => {});
   } catch { /* Extension was reloaded while this page remained open. */ }
