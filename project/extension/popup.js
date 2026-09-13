@@ -37,7 +37,7 @@ document.addEventListener('pointerdown',event=>{if(pickerOpen&&!event.target.clo
 function storageCall(method,value){return new Promise((resolve,reject)=>{try{chrome.storage.local[method](value,result=>{try{const failure=chrome.runtime.lastError;if(failure)reject(new Error(failure.message));else resolve(result)}catch(error){reject(error)}})}catch(error){reject(error)}})}
 const storage={get:key=>storageCall('get',key),set:value=>storageCall('set',value),remove:key=>storageCall('remove',key)};
 function reportSize(){const base=document.querySelector('header').offsetHeight+app.scrollHeight;window.parent.postMessage({type:'quadruzz-resize',height:Math.max(base,pickerDesiredHeight)},'*')}
-function reportReady(){reportSize();window.parent.postMessage({type:'quadruzz-ready'},'*')}
+function reportReady(){reportSize();window.parent.postMessage({type:'quadruzz-picker-visibility',visible:pickerOpen},'*');window.parent.postMessage({type:'quadruzz-ready'},'*')}
 async function api(path,options={}){const{token}=await storage.get('token');const headers={...(options.headers||{}),...(token?{authorization:`Bearer ${token}`}:{})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove('token');return response}
 async function pulseActivity(){try{const stored=await storage.get(['token','extensionActivitySessionId','extensionActivityPulseAt']);if(!stored.token)return;const now=Date.now();if(now-(stored.extensionActivityPulseAt||0)<15000)return;const extensionSessionId=stored.extensionActivitySessionId||crypto.randomUUID();await storage.set({extensionActivitySessionId,extensionActivityPulseAt:now});const response=await fetch(`${BASE}/api/extension`,{method:'POST',headers:{authorization:`Bearer ${stored.token}`,'content-type':'application/json'},body:JSON.stringify({extensionAction:'heartbeat',extensionSessionId})});if(response.status===401)await storage.remove(['token','extensionActivityPulseAt']);else if(!response.ok)await storage.remove('extensionActivityPulseAt')}catch(error){if(!stopInvalidContext(error))try{await storage.remove('extensionActivityPulseAt')}catch{/* The next member refresh retries. */}}}
 function requireFullPopup(){if(standaloneRole)window.parent.postMessage({type:'quadruzz-require-popup'},'*')}
@@ -64,10 +64,10 @@ function bindRolePicker(){
   input.addEventListener('keydown',event=>{
     if(event.key==='Enter'){event.preventDefault();void chooseRole(input.value,true);return}
     if(event.key==='Escape'){event.preventDefault();closeRolePicker();return}
-    if((event.key==='Tab'||event.key==='ArrowDown')&&options().length){event.preventDefault();options()[event.shiftKey?options().length-1:0].focus()}
+    if((event.key==='Tab'||event.key==='ArrowDown')&&options().length){event.preventDefault();event.stopPropagation();const items=options();items[event.shiftKey?items.length-1:0].focus()}
   });
   options().forEach((button,index)=>{
-    button.addEventListener('click',()=>void chooseRole(matchingRoles()[index],false));
+    button.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();void chooseRole(matchingRoles()[index],false)});
     button.addEventListener('keydown',event=>{
       if(event.key==='Enter'||event.key===' '){event.preventDefault();void chooseRole(matchingRoles()[index],false);return}
       if(event.key==='Escape'){event.preventDefault();closeRolePicker();return}
@@ -139,10 +139,10 @@ function renderMembers(){
   const self=latestData?.members.find(member=>member.userId===latestData.currentUserId);
   const previous=self?.actingState;
   if(self)self.actingState=label;
+  const closingStandalone=standaloneRole;
   pickerOpen=false;
   roleFilter='';
-  renderMembers();
-  if(standaloneRole)try{chrome.runtime.sendMessage({type:'quadruzz-close'}).catch(()=>{})}catch{}
+  if(closingStandalone){try{chrome.runtime.sendMessage({type:'quadruzz-close'}).catch(()=>{})}catch{}}else renderMembers();
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
     if(!response.ok)throw new Error();

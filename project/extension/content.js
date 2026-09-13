@@ -7,6 +7,7 @@ function styleFrame(frame, mode) {
   const roleOnly = mode === 'role';
   frame.style.width = roleOnly ? '177px' : '216px';
   frame.style.borderRadius = roleOnly ? '2px' : '9px';
+  frame.style.boxShadow = roleOnly ? 'none' : '0 14px 38px rgba(0,0,0,.4)';
 }
 
 function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode }, '*'); }
@@ -23,6 +24,7 @@ function ensureFrame() {
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
       if (event.data?.type === 'quadruzz-resize') frame.style.height = `${Math.min(window.innerHeight - 6, Math.max(24, event.data.height))}px`;
+      if (event.data?.type === 'quadruzz-picker-visibility') frame.style.boxShadow = event.data.visible ? 'none' : (requestedMode === 'role' ? 'none' : '0 14px 38px rgba(0,0,0,.4)');
       if (event.data?.type === 'quadruzz-require-popup') {
         try { chrome.runtime.sendMessage({ type: 'quadruzz-force-popup' }).catch(() => {}); } catch {}
       }
