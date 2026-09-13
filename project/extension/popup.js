@@ -29,9 +29,9 @@ function esc(value){const node=document.createElement('span');node.textContent=v
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
 function closeRolePicker(){pickerOpen=false;roleFilter='';renderMembers()}
-function rolePickerMarkup(){
+function rolePickerMarkup(memberIndex){
   const roles=matchingRoles();
-  return `<li class="role-picker"><input id="role-filter" maxlength="30" value="${esc(roleFilter)}" aria-label="Find or create role status" autocomplete="off" spellcheck="false"><div class="role-options">${roles.map((role,index)=>`<button class="role-option" data-index="${index}" type="button">${esc(role)}</button>`).join('')}</div></li>`;
+  return `<li class="role-picker" style="top:${(memberIndex+1)*42}px"><input id="role-filter" maxlength="30" value="${esc(roleFilter)}" aria-label="Find or create role status" autocomplete="off" spellcheck="false"><div class="role-options">${roles.map((role,index)=>`<button class="role-option" data-index="${index}" type="button">${esc(role)}</button>`).join('')}</div></li>`;
 }
 function bindRolePicker(){
   const trigger=document.querySelector('.role-trigger');
@@ -64,12 +64,13 @@ function bindRolePicker(){
 }
 function renderMembers(){
   if(!latestData)return;
+  const selfIndex=latestData.members.findIndex(member=>member.userId===latestData.currentUserId);
   const rows=latestData.members.map((member,index)=>{
     const self=member.userId===latestData.currentUserId;
     const row=`<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}"><img src="${latestImages[index]||''}" alt=""><span class="name${self?' own-zone':''}">${esc(member.displayName)}</span>${self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${esc(member.actingState)}</button>`:`<span class="state">${esc(member.actingState)}</span>`}</li>`;
-    return row+(self&&pickerOpen?rolePickerMarkup():'');
+    return row;
   }).join('');
-  app.innerHTML=`<ul class="members">${rows}</ul>`;
+  app.innerHTML=`<ul class="members">${rows}${pickerOpen&&selfIndex>=0?rolePickerMarkup(selfIndex):''}</ul>`;
   bindRolePicker();
   reportReady();
 }
