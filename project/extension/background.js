@@ -1,10 +1,11 @@
 const BASE = 'https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const ACTIVITY_ALARM = 'cross-quadruzz-activity';
 const CONNECT_TAB_KEY = 'connectTabId';
+const seenNoteNotifications = new Map();
 
-async function tell(tabId, type, mode) {
+async function tell(tabId, type, mode, panel = null) {
   if (!tabId) return;
-  try { await chrome.tabs.sendMessage(tabId, { type, mode }); } catch { /* Restricted or unloaded tab. */ }
+  try { await chrome.tabs.sendMessage(tabId, { type, mode, panel }); } catch { /* Restricted or unloaded tab. */ }
 }
 
 async function broadcast(type) {
@@ -17,6 +18,27 @@ async function getState() {
 }
 
 async function resetState() { await chrome.storage.session.set({ overlayMode: 'hidden', activeTabId: null }); }
+
+async function deliverNoteNotification(notification) {
+  if (!notification?.userId || !notification?.note || !notification?.noteUpdatedAt) return;
+  const key = `${notification.userId}:${notification.noteUpdatedAt}`;
+  const now = Date.now();
+  for (const [seenKey, seenAt] of seenNoteNotifications) if (now - seenAt > 10000) seenNoteNotifications.delete(seenKey);
+  if (seenNoteNotifications.has(key)) return;
+  seenNoteNotifications.set(key, now);
+  const state = await getState();
+  if (state.mode === 'popup') return;
+  let tabId = state.activeTabId;
+  if (!tabId) {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    tabId = tab?.id;
+  }
+  await tell(tabId, 'quadruzz-note-notification', undefined, notification);
+}
+
+async function clearNoteNotifications(tabId) {
+  await tell(tabId, 'quadruzz-clear-notifications');
+}
 
 function connectionCallbackUrl() { return `https://${chrome.runtime.id}.chromiumapp.org/quadruzz`; }
 
@@ -76,7 +98,9 @@ async function toggle(tab) {
   const mode = state.mode === 'popup' ? 'hidden' : 'popup';
   const activeTabId = tab?.id || state.activeTabId;
   await chrome.storage.session.set({ overlayMode: mode, activeTabId });
-  await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode);
+  const panel = mode === 'popup' && (state.mode === 'role' || state.mode === 'note') ? state.mode : null;
+  if (mode === 'popup') await clearNoteNotifications(activeTabId);
+  await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode, panel);
 }
 
 async function togglePanel(tab, panel) {
@@ -127,6 +151,10 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
   await chrome.storage.session.remove(CONNECT_TAB_KEY);
   try { await chrome.runtime.sendMessage({ type: 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
 });
+let lastShortcutType = '';
+let lastShortcutAt = 0;
+function acceptShortcut(type) { const now = Date.now(); if (type === lastShortcutType && now - lastShortcutAt < 180) return false; lastShortcutType = type; lastShortcutAt = now; return true; }
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'quadruzz-open-hq') void chrome.tabs.create({ url: BASE, active: true });
   if (message?.type === 'quadruzz-connect') void openConnectionTab().catch(() => broadcast('quadruzz-connect-cancelled'));
@@ -138,9 +166,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => broadcast('quadruzz-connect-cancelled'));
   }
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
-  if (message?.type === 'quadruzz-toggle') void toggle(sender.tab);
-  if (message?.type === 'quadruzz-role-toggle') void toggleRole(sender.tab);
-  if (message?.type === 'quadruzz-note-toggle') void toggleNote(sender.tab);
+  if (message?.type === 'quadruzz-note-notification') void deliverNoteNotification(message.notification);
+  if (message?.type === 'quadruzz-toggle' && acceptShortcut(message.type)) void toggle(sender.tab);
+  if (message?.type === 'quadruzz-role-toggle' && acceptShortcut(message.type)) void toggleRole(sender.tab);
+  if (message?.type === 'quadruzz-note-toggle' && acceptShortcut(message.type)) void toggleNote(sender.tab);
   if (message?.type === 'quadruzz-force-popup') {
     void chrome.storage.session.set({ overlayMode: 'popup', activeTabId: sender.tab?.id }).then(() => tell(sender.tab?.id, 'quadruzz-show', 'popup'));
   }

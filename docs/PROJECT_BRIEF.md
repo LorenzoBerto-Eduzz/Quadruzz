@@ -28,7 +28,7 @@ The agreed initial product direction is:
 - heartbeat-based presence expiry; and
 - future shared state backed by Sites storage.
 
-The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+W toggles the member popup; Alt+Shift+D toggles the shared acting-status picker. Hidden mode remains active for future note notifications. Version `0.1.0` has been submitted for Chrome Web Store review while local development continues.
+The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+W toggles the member popup; Alt+Shift+D toggles the shared acting-status picker; Alt+Shift+S toggles the shared-note editor. Hidden mode receives five-second stacked notifications for new notes from other members. Version `0.1.0` has been submitted for Chrome Web Store review while local development continues.
 
 ## Run And Test Commands
 
@@ -64,7 +64,7 @@ Keep this brief summary current. Put detailed build, export, package, deployment
 
 ## Current Priorities
 
-1. Continue the Companion popup with member notes and hidden-state note notifications; acting-state controls are implemented.
+1. Continue polishing the Companion popup; acting-state controls, shared member notes, and hidden-state note notifications are implemented.
 2. Keep the hosted Site as the HQ for access, profiles, membership, logs, and instance configuration.
 3. Keep authorization, membership, live data, and revocation server-authoritative and shared across Site and Companion.
 4. Defer dragging/saved coordinates. After Store approval, connect the HQ installation prompt to the approved listing.

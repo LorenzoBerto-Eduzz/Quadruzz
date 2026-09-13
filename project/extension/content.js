@@ -3,17 +3,19 @@ let revealRequested = false;
 let requestedMode = 'popup';
 let frameReady = false;
 let presentationId = 0;
+let carriedPanel = null;
 
 function styleFrame(frame, mode) {
   const roleOnly = mode === 'role';
   const noteOnly = mode === 'note';
-  frame.style.width = roleOnly || noteOnly ? '161px' : '216px';
-  frame.style.right = roleOnly || noteOnly ? '79px' : '72px';
-  frame.style.borderRadius = roleOnly || noteOnly ? '2px' : '9px';
+  const notificationOnly = mode === 'notification';
+  frame.style.width = roleOnly || noteOnly || notificationOnly ? '161px' : '216px';
+  frame.style.right = roleOnly || noteOnly || notificationOnly ? '79px' : '72px';
+  frame.style.borderRadius = roleOnly || noteOnly || notificationOnly ? '2px' : '9px';
   frame.style.boxShadow = 'none';
 }
 
-function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode, visible: revealRequested, presentationId }, '*'); }
+function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode, visible: revealRequested, presentationId, carriedPanel }, '*'); }
 
 function ensureFrame() {
   let frame = document.getElementById(FRAME_ID);
@@ -43,23 +45,42 @@ function ensureFrame() {
         frameReady = true;
         if (firstReady) { notifyMode(frame); return; }
         if (event.data.presentationId !== presentationId) return;
-        if (revealRequested) { frame.style.display = 'block'; frame.style.visibility = 'visible'; }
+        if (revealRequested) {
+          frame.style.display = 'block';
+          frame.style.visibility = 'visible';
+          frame.focus({ preventScroll: true });
+          frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
+        }
       }
     });
   }
   return frame;
 }
 
-function show(mode = 'popup') {
+function show(mode = 'popup', panel = null) {
   presentationId += 1;
+  const currentPresentationId = presentationId;
   revealRequested = true;
   const previousMode = requestedMode;
   requestedMode = mode;
+  carriedPanel = panel;
   const frame = ensureFrame();
-  styleFrame(frame, mode);
-  if (mode === 'role' || mode === 'note' || ((previousMode === 'role' || previousMode === 'note') && mode === 'popup')) frame.style.height = `${window.innerHeight - 6}px`;
-  if (frameReady) { frame.style.visibility = 'hidden'; frame.style.display = 'block'; }
-  notifyMode(frame);
+  const renderAtFinalGeometry = () => {
+    if (currentPresentationId !== presentationId || !revealRequested) return;
+    styleFrame(frame, mode);
+    if (mode === 'role' || mode === 'note' || ((previousMode === 'role' || previousMode === 'note') && mode === 'popup')) {
+      frame.style.height = `${window.innerHeight - 6}px`;
+    }
+    if (frameReady && !transferring) frame.style.display = 'block';
+    notifyMode(frame);
+  };
+  const transferring = mode === 'popup' && (previousMode === 'role' || previousMode === 'note' || previousMode === 'notification');
+  if (frameReady) {
+    frame.style.visibility = 'hidden';
+    if (transferring) frame.style.display = 'none';
+  }
+  if (transferring) requestAnimationFrame(renderAtFinalGeometry);
+  else renderAtFinalGeometry();
 }
 
 function hide() {
@@ -75,10 +96,17 @@ function hide() {
   }
 }
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === 'quadruzz-show') show(message.mode);
+  if (message?.type === 'quadruzz-show') show(message.mode, message.panel);
   if (message?.type === 'quadruzz-hide') hide();
   if (message?.type === 'quadruzz-role-toggle-open') document.getElementById(FRAME_ID)?.contentWindow?.postMessage({ type: 'quadruzz-role-toggle' }, '*');
   if (message?.type === 'quadruzz-note-toggle-open') document.getElementById(FRAME_ID)?.contentWindow?.postMessage({ type: 'quadruzz-note-toggle' }, '*');
+  if (message?.type === 'quadruzz-clear-notifications') document.getElementById(FRAME_ID)?.contentWindow?.postMessage({ type: 'quadruzz-clear-notifications' }, '*');
+  if (message?.type === 'quadruzz-note-notification') {
+    const frame = ensureFrame();
+    if (revealRequested && requestedMode === 'popup') return;
+    if (!revealRequested) show('notification');
+    frame.contentWindow?.postMessage({ type: 'quadruzz-note-notification', notification: message.panel }, '*');
+  }
 });
 
 window.addEventListener('message', (event) => {
@@ -103,16 +131,12 @@ window.addEventListener('keydown', (event) => {
   event.preventDefault();
   event.stopImmediatePropagation();
   try {
-    const panel = roleToggle ? 'role' : noteToggle ? 'note' : null;
-    if (panel && revealRequested && requestedMode === 'popup') {
+    if ((roleToggle || noteToggle) && revealRequested && requestedMode === 'popup') {
       const frame = ensureFrame();
       frame.style.height = `${window.innerHeight - 6}px`;
-      frame.contentWindow?.postMessage({ type: panel === 'role' ? 'quadruzz-role-toggle' : 'quadruzz-note-toggle' }, '*');
+      frame.contentWindow?.postMessage({ type: roleToggle ? 'quadruzz-role-toggle' : 'quadruzz-note-toggle' }, '*');
       return;
     }
-    if (panel && revealRequested && requestedMode === panel) hide();
-    else if (panel && (!revealRequested || requestedMode !== panel)) show(panel);
-    else if (popupToggle && revealRequested && requestedMode === 'popup') hide();
     const type = popupToggle ? 'quadruzz-toggle' : roleToggle ? 'quadruzz-role-toggle' : 'quadruzz-note-toggle';
     const sent = chrome.runtime.sendMessage({ type });
     if (sent?.catch) sent.catch(() => {});

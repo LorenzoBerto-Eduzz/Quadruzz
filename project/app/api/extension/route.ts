@@ -13,7 +13,8 @@ function validPresenceSessionId(value: string | null | undefined): value is stri
 function normalizeRoleStatus(value: unknown): { key: string; label: string } | null {
   if (typeof value !== 'string') return null;
   const label = value.trim().replace(/\s+/g, ' ');
-  if (!label || label.length > 30 || /[\u0000-\u001f\u007f]/.test(label)) return null;
+  const hasControlCharacter = Array.from(label).some((character) => { const code = character.charCodeAt(0); return code <= 31 || code === 127; });
+  if (!label || label.length > 30 || hasControlCharacter) return null;
   return { key: label.toLocaleLowerCase('en-US'), label };
 }
 

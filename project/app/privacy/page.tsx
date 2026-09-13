@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy | Cross-Quadruzz',
@@ -33,7 +34,7 @@ export default function PrivacyPage() {
         <h2>Contact</h2>
         <p>For privacy questions or deletion requests, contact the Cross-Quadruzz administrator through your organization.</p>
 
-        <a className="privacy-back" href="/">Return to Cross-Quadruzz</a>
+        <Link className="privacy-back" href="/">Return to Cross-Quadruzz</Link>
       </article>
     </main>
   );

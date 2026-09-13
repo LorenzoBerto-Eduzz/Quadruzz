@@ -336,7 +336,7 @@ function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl 
         <div className="profile-identity">
           <label className="profile-image-picker" aria-label="Choose profile image">
             <input aria-label="Profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required={!data.currentUser?.imageUrl} onChange={(event) => selectImage(event.target.files?.[0] || null)} />
-            {imageSource ? <><img src={imageSource} alt="" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling?.removeAttribute('hidden'); }} /><Plus aria-hidden="true" hidden /></> : <Plus aria-hidden="true" />}
+            {imageSource ? <><img src={imageSource} alt="" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling?.removeAttribute('hidden'); }} /><span hidden><Plus aria-hidden="true" /></span></> : <Plus aria-hidden="true" />}
           </label>
           <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} onBlur={() => { if (pending && name.trim() && name.trim() !== data.currentUser?.displayName) void finishProfile(name, null); }} />
         </div>

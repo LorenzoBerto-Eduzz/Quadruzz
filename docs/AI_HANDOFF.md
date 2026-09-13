@@ -29,6 +29,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 - Companion version is `0.1.0`. The unpacked development source is `project/extension/`; the current uploadable archive is `local_assets/cross-quadruzz-extension-0.1.0.zip`. A Chrome Web Store draft has been submitted and is awaiting review, while local testing continues from the unpacked source.
 - Companion authorization is issued through the authenticated Cross Site and bound to the stable OpenAI user ID. It uses the same server-authoritative membership/profile/state data as the Site; removal or credential revocation invalidates extension access.
 - Approved members can select or create shared acting-status values from their own Companion row. Values preserve the exact capitalization entered. The picker has no outer shadow, keeps typing focus independent from its selected row, starts with the first matching option selected, cycles options and the input row with Tab, and applies the selected row with Enter. The direct picker and full member popup are independent overlay modes: opening the popup transfers an active direct picker by changing only its Y position; hiding the popup clears both.
+- Approved members can publish one shared note of up to two visual lines from their own Companion row or Alt+Shift+S. Notes update optimistically and store a server timestamp. Other active Companion users receive a five-second, newest-first notification stack only while their member popup is hidden; opening the popup clears notifications, and direct role/note overlays reposition below the stack. Historical notes, removals, and the author’s other sessions do not notify.
 
 - The public URL shows only Sign in with ChatGPT. Signed-in users request access and remain pending until approved. Anonymous and pending users see no board or member data.
 - Identity is the stable authenticated OpenAI user ID. IP, device, browser profile, and display name are not identity; separate OpenAI accounts are separate Quadruzz identities.
@@ -60,7 +61,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 
 ## Suggested Near-Term Next Steps
 
-- Continue the Companion popup with member notes and hidden-state note notifications; the shared acting-status selector is implemented.
+- Continue polishing the Companion popup after the implemented shared notes, hidden-state five-second notification stack, and acting-status selector.
 - Continue the HQ as the configuration, access, membership, and instance control center while keeping shared data and permissions server-authoritative.
 - Continue local Companion development; after changes stabilize, prepare a new versioned Web Store archive and submit it as an update. Add the HQ install prompt only after the Store listing is approved and its installation URL is known.
 - Validate each hosted-page change locally and follow the current owner authorization for delivery unless a request explicitly says not to commit or deploy.

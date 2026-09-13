@@ -23,11 +23,37 @@ let pickerDesiredHeight=0;
 let roleLayoutFrame=null;
 let standaloneRole=false;
 let standaloneNote=false;
+let standaloneNotification=false;
 let pendingPanel=null;
 let overlayVisible=false;
 let selectedRoleIndex=0;
 let presentationId=0;
+let focusRequest=0;
+let notesInitialized=false;
+const knownNoteVersions=new Map();
+let notifications=[];
+const notificationTimers=new Map();
 
+function focusOverlayInput(){
+  const request=++focusRequest;
+  const tryFocus=attempt=>{
+    if(request!==focusRequest||!overlayVisible)return;
+    const input=document.querySelector('#role-filter,#note-input');
+    if(!input)return;
+    input.focus({preventScroll:true});
+    input.setSelectionRange(input.value.length,input.value.length);
+    if(document.activeElement!==input&&attempt<5)setTimeout(()=>tryFocus(attempt+1),16*(attempt+1));
+  };
+  requestAnimationFrame(()=>tryFocus(0));
+}
+
+function notificationKey(notification){return `${notification.userId}:${notification.noteUpdatedAt}`}
+function clearNotifications(render=true){notifications=[];for(const timer of notificationTimers.values())clearTimeout(timer);notificationTimers.clear();document.querySelector('.note-notifications')?.remove();if(render&&latestData)renderMembers()}
+function removeNotification(key){notifications=notifications.filter(item=>notificationKey(item)!==key);const timer=notificationTimers.get(key);if(timer)clearTimeout(timer);notificationTimers.delete(key);if(!notifications.length&&!pickerOpen&&!noteOpen&&standaloneNotification){hideOverlayNow();return}if(latestData)renderMembers()}
+function addNotification(notification){if(!notification?.note||notification.userId===latestData?.currentUserId)return;const key=notificationKey(notification);notifications=notifications.filter(item=>notificationKey(item)!==key);notifications.unshift(notification);const previous=notificationTimers.get(key);if(previous)clearTimeout(previous);notificationTimers.set(key,setTimeout(()=>removeNotification(key),5000));if(latestData)renderMembers()}
+function notificationMarkup(){if(!notifications.length)return'';return `<div class="note-notifications">${notifications.map(notification=>{const twoLines=noteUsesTwoLines(notification.note);return `<div class="note-notification${twoLines?' two-lines':''}"><div class="notification-identity"><span class="notification-name">${esc(notification.displayName)}</span><span class="notification-role">${esc(notification.actingState)}</span></div><div class="notification-note">${esc(notification.note)}</div></div>`}).join('')}</div>`}
+function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?42:32),0)+(notifications.length-1)*2}
+function detectNoteNotifications(data){const next=new Map();for(const member of data.members){const version=Number(member.noteUpdatedAt||0);next.set(member.userId,version);if(notesInitialized&&member.userId!==data.currentUserId&&member.note&&version&&knownNoteVersions.get(member.userId)!==version){try{const sent=chrome.runtime.sendMessage({type:'quadruzz-note-notification',notification:{userId:member.userId,displayName:member.displayName,actingState:member.actingState,note:member.note,noteUpdatedAt:version}});if(sent?.catch)sent.catch(()=>{})}catch{/* Extension context closed. */}}}knownNoteVersions.clear();for(const [userId,version] of next)knownNoteVersions.set(userId,version);notesInitialized=true}
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const noteToggle=event.code==='KeyS'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle&&!noteToggle))return;event.preventDefault();event.stopImmediatePropagation();if(overlayVisible&&(roleToggle||noteToggle)){const switchingStandalone=(roleToggle&&standaloneNote)||(noteToggle&&standaloneRole);if(!switchingStandalone){if(roleToggle)requestRolePickerToggle();else requestNoteToggle();return}}try{const type=popupToggle?'quadruzz-toggle':roleToggle?'quadruzz-role-toggle':'quadruzz-note-toggle';const sent=chrome.runtime.sendMessage({type});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
 chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView()});
@@ -36,8 +62,14 @@ window.addEventListener('message',event=>{
   if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
   if(event.data?.type==='quadruzz-role-toggle'){requestRolePickerToggle();return}
   if(event.data?.type==='quadruzz-note-toggle'){requestNoteToggle();return}
+  if(event.data?.type==='quadruzz-note-notification'){addNotification(event.data.notification);return}
+  if(event.data?.type==='quadruzz-clear-notifications'){clearNotifications(false);return}
   if(event.data?.type==='quadruzz-picker-prepared'){const panel=pendingPanel;pendingPanel=null;if(panel==='role'){pickerOpen=true;noteOpen=false;selectedRoleIndex=0;roleFilter=''}else if(panel==='note'){noteOpen=true;pickerOpen=false;noteDraft='';noteLastValid=''}renderMembers();return}
-  if(event.data?.type==='quadruzz-overlay-hidden'){overlayVisible=false;pickerOpen=false;noteOpen=false;standaloneRole=false;standaloneNote=false;pendingPanel=null;selectedRoleIndex=0;roleFilter='';noteDraft='';noteLastValid='';pickerDesiredHeight=0;document.documentElement.classList.remove('standalone-role','standalone-note');document.querySelector('.role-picker,.note-editor')?.remove();return}
+  if(event.data?.type==='quadruzz-overlay-hidden'){focusRequest+=1;overlayVisible=false;pickerOpen=false;noteOpen=false;standaloneRole=false;standaloneNote=false;standaloneNotification=false;clearNotifications(false);pendingPanel=null;selectedRoleIndex=0;roleFilter='';noteDraft='';noteLastValid='';pickerDesiredHeight=0;document.documentElement.classList.remove('standalone-role','standalone-note');document.querySelector('.role-picker,.note-editor')?.remove();return}
+  if(event.data?.type==='quadruzz-presented'){
+    if(Number(event.data.presentationId||0)===presentationId)focusOverlayInput();
+    return
+  }
   if(event.data?.type==='quadruzz-overlay-mode'){
     presentationId=Number(event.data.presentationId||0);
     overlayVisible=event.data.visible===true;
@@ -46,13 +78,19 @@ window.addEventListener('message',event=>{
     const wasStandaloneNote=standaloneNote;
     standaloneRole=event.data.mode==='role';
     standaloneNote=event.data.mode==='note';
+    standaloneNotification=event.data.mode==='notification';
     document.documentElement.classList.toggle('standalone-role',standaloneRole);
     document.documentElement.classList.toggle('standalone-note',standaloneNote);
-    if(standaloneRole&&!wasStandaloneRole){pickerOpen=true;noteOpen=false;selectedRoleIndex=0;}
+    document.documentElement.classList.toggle('standalone-notification',standaloneNotification);
+    if(event.data.mode==='popup'){
+      clearNotifications(false);
+      pickerOpen=event.data.carriedPanel==='role';
+      noteOpen=event.data.carriedPanel==='note';
+      if(!pickerOpen)roleFilter='';
+      if(!noteOpen){noteDraft='';noteLastValid='';}
+    }else if(standaloneRole&&!wasStandaloneRole){pickerOpen=true;noteOpen=false;selectedRoleIndex=0;}
     else if(standaloneNote&&!wasStandaloneNote){noteOpen=true;pickerOpen=false;noteDraft='';noteLastValid='';}
-    else if(event.data.mode==='popup'&&wasStandaloneRole)pickerOpen=true;
-    else if(event.data.mode==='popup'&&wasStandaloneNote)noteOpen=true;
-    if(latestData){const transferring=event.data.mode==='popup'&&(wasStandaloneRole||wasStandaloneNote);if(transferring)requestAnimationFrame(()=>requestAnimationFrame(renderMembers));else renderMembers();}
+    if(latestData)renderMembers();
   }
 });
 document.addEventListener('pointerdown',event=>{if(pickerOpen&&!event.target.closest('.role-picker,.role-trigger'))closeRolePicker();if(noteOpen&&!event.target.closest('.note-editor,.note-trigger'))closeNoteEditor()});
@@ -61,7 +99,7 @@ function storageCall(method,value){return new Promise((resolve,reject)=>{try{chr
 const storage={get:key=>storageCall('get',key),set:value=>storageCall('set',value),remove:key=>storageCall('remove',key)};
 function reportSize(){const base=document.querySelector('header').offsetHeight+app.scrollHeight;window.parent.postMessage({type:'quadruzz-resize',height:Math.max(base,pickerDesiredHeight)},'*')}
 function reportReady(){reportSize();window.parent.postMessage({type:'quadruzz-picker-visibility',visible:pickerOpen||noteOpen},'*');window.parent.postMessage({type:'quadruzz-ready',presentationId},'*')}
-async function api(path,options={}){const{token}=await storage.get('token');const headers={...(options.headers||{}),...(token?{authorization:`Bearer ${token}`}:{})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove('token');return response}
+async function api(path,options={}){const{token}=await storage.get('token');const headers={...options.headers,...(token&&{authorization:`Bearer ${token}`})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove('token');return response}
 async function pulseActivity(){try{const stored=await storage.get(['token','extensionActivitySessionId','extensionActivityPulseAt']);if(!stored.token)return;const now=Date.now();if(now-(stored.extensionActivityPulseAt||0)<15000)return;const extensionSessionId=stored.extensionActivitySessionId||crypto.randomUUID();await storage.set({extensionActivitySessionId,extensionActivityPulseAt:now});const response=await fetch(`${BASE}/api/extension`,{method:'POST',headers:{authorization:`Bearer ${stored.token}`,'content-type':'application/json'},body:JSON.stringify({extensionAction:'heartbeat',extensionSessionId})});if(response.status===401)await storage.remove(['token','extensionActivityPulseAt']);else if(!response.ok)await storage.remove('extensionActivityPulseAt')}catch(error){if(!stopInvalidContext(error))try{await storage.remove('extensionActivityPulseAt')}catch{/* The next member refresh retries. */}}}
 function requireFullPopup(){if(standaloneRole||standaloneNote)window.parent.postMessage({type:'quadruzz-require-popup'},'*')}
 function connectingView(){requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" disabled>Connecting to Cross…</button></div>';reportReady()}
@@ -229,17 +267,19 @@ function layoutRoleLabels(){
 new ResizeObserver(layoutRoleLabels).observe(document.documentElement);
 function renderMembers(){
   if(!latestData)return;
-  document.querySelectorAll('.role-picker,.note-editor').forEach(element=>element.remove());
+  document.querySelectorAll('.role-picker,.note-editor,.note-notifications').forEach(element=>element.remove());
   const rows=latestData.members.map((member,index)=>{
     const self=member.userId===latestData.currentUserId;
     const role=`<span class="role-label">${esc(member.actingState)}</span>`;
     const name=self?`<button class="name own-zone note-trigger" type="button" aria-expanded="${noteOpen}"><span class="name-label">${esc(member.displayName)}</span></button>`:`<span class="name"><span class="name-label">${esc(member.displayName)}</span></span>`;
     const state=self?`<button class="state role-trigger" type="button" aria-expanded="${pickerOpen}">${role}</button>`:`<span class="state role-display">${role}</span>`;
-    const noteClass=`note-label${noteUsesTwoLines(member.note)?' two-lines':''}${self?' own-note':''}`;
+    const twoLineNote=noteUsesTwoLines(member.note);
+    const noteClass=`note-label${twoLineNote?' two-lines':''}${self?' own-note':''}`;
     const note=member.note?`${self?`<button class="${noteClass}" type="button" aria-label="Remove note">`:`<span class="${noteClass}">`}<span class="note-label-text">${esc(member.note)}</span><span class="note-label-meta">${self?'Remove':esc(formatNoteTime(member.noteUpdatedAt))}</span>${self?'</button>':'</span>'}`:'';
-    return `<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}${member.note?' has-note':''}"><img src="${latestImages[index]||''}" alt="">${name}${state}${note}</li>`;
+    return `<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}${member.note?' has-note':''}${twoLineNote?' two-line-note':''}"><img src="${latestImages[index]||''}" alt="">${name}${state}${note}</li>`;
   }).join('');
   app.innerHTML=`<ul class="members">${rows}</ul>`;
+  document.body.insertAdjacentHTML('beforeend',notificationMarkup());
 
   layoutRoleLabels();
 
@@ -255,29 +295,26 @@ function renderMembers(){
     noteTrigger.addEventListener('pointerdown',event=>{event.preventDefault();requestNoteToggle()});
     noteTrigger.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();requestNoteToggle()}});
   }
-  pickerDesiredHeight=0;
+  const notificationsHeight=notificationHeight();
+  pickerDesiredHeight=notificationsHeight;
   if(pickerOpen&&roleTrigger){
-    const member=roleTrigger.closest('.member');
-    const memberRect=member.getBoundingClientRect();
-    const triggerRect=roleTrigger.getBoundingClientRect();
+    const selfIndex=latestData.members.findIndex(member=>member.userId===latestData.currentUserId);
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=standaloneRole?0:triggerRect.bottom+2;
+    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):18+(selfIndex+1)*42+2;
     picker.style.top=`${top}px`;
-    picker.style.left=standaloneRole?'0':`${memberRect.left+41}px`;
-    picker.style.width=standaloneRole?'100%':`${memberRect.width-41}px`;
+    picker.style.left=standaloneRole?'0':'48px';
+    picker.style.width=standaloneRole?'100%':'161px';
     picker.style.maxHeight=`calc(100vh - ${top}px)`;
     pickerDesiredHeight=top+(matchingRoles().length+1)*24;
   }else if(noteOpen&&noteTrigger){
-    const member=noteTrigger.closest('.member');
-    const memberRect=member.getBoundingClientRect();
-    const triggerRect=noteTrigger.getBoundingClientRect();
+    const selfIndex=latestData.members.findIndex(member=>member.userId===latestData.currentUserId);
     document.body.insertAdjacentHTML('beforeend',noteEditorMarkup());
     const editor=document.querySelector('.note-editor');
-    const top=standaloneNote?0:triggerRect.bottom+2;
+    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):18+(selfIndex+1)*42+2;
     editor.style.top=`${top}px`;
-    editor.style.left=standaloneNote?'0':`${memberRect.left+41}px`;
-    editor.style.width=standaloneNote?'100%':`${memberRect.width-41}px`;
+    editor.style.left=standaloneNote?'0':'48px';
+    editor.style.width=standaloneNote?'100%':'161px';
     editor.dataset.top=String(top);
     pickerDesiredHeight=top+18;
   }
@@ -337,6 +374,7 @@ async function loadMembers(forceRender=false){
       if(!savingNote&&(self?.note??null)===pendingNote){pendingNoteSet=false;pendingNote=null;pendingNoteUpdatedAt=null}
       else if(self){self.note=pendingNote;self.noteUpdatedAt=pendingNoteUpdatedAt;}
     }
+    detectNoteNotifications(data);
     latestData=data;
     latestImages=images;
     if(!pickerOpen&&!noteOpen&&(forceRender||viewSignature()!==lastRenderSignature))renderMembers();
