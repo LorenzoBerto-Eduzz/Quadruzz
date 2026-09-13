@@ -97,8 +97,12 @@ async function toggle(tab) {
   const state = await getState();
   const mode = state.mode === 'popup' ? 'hidden' : 'popup';
   const activeTabId = tab?.id || state.activeTabId;
-  await chrome.storage.session.set({ overlayMode: mode, activeTabId });
   const panel = mode === 'popup' && (state.mode === 'role' || state.mode === 'note') ? state.mode : null;
+  if (panel) {
+    await tell(activeTabId, 'quadruzz-hide');
+    await new Promise((resolve) => setTimeout(resolve, 34));
+  }
+  await chrome.storage.session.set({ overlayMode: mode, activeTabId });
   if (mode === 'popup') await clearNoteNotifications(activeTabId);
   await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode, panel);
 }
