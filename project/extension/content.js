@@ -25,7 +25,7 @@ function ensureFrame() {
     frame.id = FRAME_ID;
     frame.src = chrome.runtime.getURL('popup.html');
     frame.title = 'Cross-Quadruzz';
-    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '216px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', visibility: 'hidden', display: 'none' });
+    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '216px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'none' });
     (document.body || document.documentElement).append(frame);
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
@@ -60,6 +60,8 @@ function ensureFrame() {
               if (!revealRequested || readyPresentationId !== presentationId) return;
               frame.style.display = 'block';
               frame.style.visibility = 'visible';
+              frame.style.opacity = '1';
+              frame.style.pointerEvents = 'auto';
               const needsInputFocus =
                 requestedMode === 'role' ||
                 requestedMode === 'note' ||
@@ -84,26 +86,18 @@ function show(mode = 'popup', panel = null) {
   revealFrame = null;
   const currentPresentationId = presentationId;
   revealRequested = true;
-  const previousMode = requestedMode;
   requestedMode = mode;
   carriedPanel = panel;
   const frame = ensureFrame();
-  const renderAtFinalGeometry = () => {
-    if (currentPresentationId !== presentationId || !revealRequested) return;
-    styleFrame(frame, mode);
-    if (mode === 'role' || mode === 'note' || ((previousMode === 'role' || previousMode === 'note') && mode === 'popup')) {
-      frame.style.height = `${window.innerHeight - 6}px`;
-    }
-    if (frameReady && !transferring) frame.style.display = 'block';
-    notifyMode(frame);
-  };
-  const transferring = mode === 'popup' && (previousMode === 'role' || previousMode === 'note' || previousMode === 'notification');
-  if (frameReady) {
-    frame.style.visibility = 'hidden';
-    if (transferring) frame.style.display = 'none';
+  frame.style.opacity = '0';
+  frame.style.pointerEvents = 'none';
+  frame.style.visibility = 'visible';
+  frame.style.display = 'block';
+  styleFrame(frame, mode);
+  if (mode === 'role' || mode === 'note' || panel === 'role' || panel === 'note') {
+    frame.style.height = `${window.innerHeight - 6}px`;
   }
-  if (transferring) requestAnimationFrame(renderAtFinalGeometry);
-  else renderAtFinalGeometry();
+  if (currentPresentationId === presentationId && revealRequested) notifyMode(frame);
 }
 
 function hide() {
@@ -115,6 +109,8 @@ function hide() {
   revealFrame = null;
   const frame = document.getElementById(FRAME_ID);
   if (frame) {
+    frame.style.opacity = '0';
+    frame.style.pointerEvents = 'none';
     frame.style.visibility = 'hidden';
     frame.style.display = 'none';
     frame.blur();
