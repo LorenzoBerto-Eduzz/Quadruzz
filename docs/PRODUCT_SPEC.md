@@ -19,6 +19,7 @@ This document records settled product behavior and the current implementation bo
 - Local extension storage is limited to non-authoritative device preferences, such as presentation or convenience settings. Membership, roles, approval state, profiles, shared content, notification eligibility, and revocation state remain server-authoritative.
 - Removing a member, revoking a pairing, or otherwise withdrawing access must invalidate extension access. A previously paired installation must not retain access merely because it still has local data or credentials.
 - Preserve a clean backend/domain boundary so the hosted page and future Companion can share authorization, instance membership, and live data behavior without coupling product rules to either interface.
+- Approved members can select an existing shared acting-status value or create one from the Companion. Acting-status spelling and capitalization are preserved exactly. Alt+Shift+D opens the selector directly; its keyboard model keeps the input ready for typing while Tab independently cycles the selected existing values and the create-input row, and Enter applies the selected row.
 
 ## Access Flow And Privacy Boundary
 

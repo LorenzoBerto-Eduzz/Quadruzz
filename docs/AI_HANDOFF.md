@@ -25,9 +25,10 @@ This is the portable continuity note for AI coding sessions working on this repo
 ## Settled Product Direction
 
 - Quadruzz Companion is now the primary daily interface. The current local unpacked Cross build lives in `project/extension/`; later distribution should be an unlisted Chrome Web Store item and can evolve toward a global multi-instance Companion.
-- The current Companion is a persistent floating top-right overlay injected into the focused ordinary browser tab. The toolbar icon and Alt+Shift+W toggle it; hidden mode stays active for future notifications. It shows every approved member, with active members vivid and first, and inactive members dimmed afterward.
+- The current Companion is a persistent floating top-right overlay injected into the focused ordinary browser tab. The toolbar icon and Alt+Shift+W toggle the member popup; Alt+Shift+D toggles the acting-status picker directly. Hidden mode stays active for future notifications. It shows every approved member, with active members vivid and first, and inactive members dimmed afterward.
 - Companion version is `0.1.0`. The unpacked development source is `project/extension/`; the current uploadable archive is `local_assets/cross-quadruzz-extension-0.1.0.zip`. A Chrome Web Store draft has been submitted and is awaiting review, while local testing continues from the unpacked source.
 - Companion authorization is issued through the authenticated Cross Site and bound to the stable OpenAI user ID. It uses the same server-authoritative membership/profile/state data as the Site; removal or credential revocation invalidates extension access.
+- Approved members can select or create shared acting-status values from their own Companion row. Values preserve the exact capitalization entered. The picker has no outer shadow, keeps typing focus independent from its selected row, starts with the first matching option selected, cycles options and the input row with Tab, and applies the selected row with Enter. The direct picker and full member popup are independent overlay modes: opening the popup transfers an active direct picker by changing only its Y position; hiding the popup clears both.
 
 - The public URL shows only Sign in with ChatGPT. Signed-in users request access and remain pending until approved. Anonymous and pending users see no board or member data.
 - Identity is the stable authenticated OpenAI user ID. IP, device, browser profile, and display name are not identity; separate OpenAI accounts are separate Quadruzz identities.
@@ -59,7 +60,7 @@ This is the portable continuity note for AI coding sessions working on this repo
 
 ## Suggested Near-Term Next Steps
 
-- Continue the Companion popup: add owner-selectable acting values (initial placeholders `chat` and `ticket`), member notes, and hidden-state note notifications.
+- Continue the Companion popup with member notes and hidden-state note notifications; the shared acting-status selector is implemented.
 - Continue the HQ as the configuration, access, membership, and instance control center while keeping shared data and permissions server-authoritative.
 - Continue local Companion development; after changes stabilize, prepare a new versioned Web Store archive and submit it as an update. Add the HQ install prompt only after the Store listing is approved and its installation URL is known.
 - Validate each hosted-page change locally and follow the current owner authorization for delivery unless a request explicitly says not to commit or deploy.

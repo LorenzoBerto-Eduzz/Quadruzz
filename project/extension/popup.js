@@ -15,21 +15,25 @@ let lastRenderSignature='';
 let pickerDesiredHeight=0;
 let roleLayoutFrame=null;
 let standaloneRole=false;
+let overlayVisible=false;
+let selectedRoleIndex=0;
 
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
-window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle))return;event.preventDefault();event.stopImmediatePropagation();if(roleToggle){requestRolePickerToggle();return}try{const sent=chrome.runtime.sendMessage({type:'quadruzz-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
+window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle))return;event.preventDefault();event.stopImmediatePropagation();if(roleToggle&&overlayVisible){requestRolePickerToggle();return}try{const sent=chrome.runtime.sendMessage({type:roleToggle?'quadruzz-role-toggle':'quadruzz-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
 chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView()});
 window.addEventListener('message',event=>{
   if(event.source!==parent)return;
   if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
   if(event.data?.type==='quadruzz-role-toggle'){requestRolePickerToggle();return}
-  if(event.data?.type==='quadruzz-picker-prepared'){if(!pickerOpen){pickerOpen=true;roleFilter='';renderMembers()}return}
-  if(event.data?.type==='quadruzz-overlay-hidden'){pickerOpen=false;roleFilter='';pickerDesiredHeight=0;document.querySelector('.role-picker')?.remove();return}
+  if(event.data?.type==='quadruzz-picker-prepared'){if(!pickerOpen){pickerOpen=true;selectedRoleIndex=0;roleFilter='';renderMembers()}return}
+  if(event.data?.type==='quadruzz-overlay-hidden'){overlayVisible=false;pickerOpen=false;standaloneRole=false;selectedRoleIndex=0;roleFilter='';pickerDesiredHeight=0;document.documentElement.classList.remove('standalone-role');document.querySelector('.role-picker')?.remove();return}
   if(event.data?.type==='quadruzz-overlay-mode'){
+    overlayVisible=event.data.visible===true;
+    if(!overlayVisible)return;
     const wasStandalone=standaloneRole;
     standaloneRole=event.data.mode==='role';
     document.documentElement.classList.toggle('standalone-role',standaloneRole);
-    if(standaloneRole)pickerOpen=true;
+    if(standaloneRole&&!wasStandalone){pickerOpen=true;selectedRoleIndex=0;}
     else if(wasStandalone)pickerOpen=true;
     if(latestData)renderMembers();
   }
@@ -54,36 +58,58 @@ function stopInvalidContext(error){if(!/extension context invalidated/i.test(Str
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
 function hideOverlayNow(){window.parent.postMessage({type:'quadruzz-hide-now'},'*')}
 function closeRolePicker(){if(standaloneRole){hideOverlayNow();return}pickerOpen=false;roleFilter='';renderMembers()}
-function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}if(standaloneRole){pickerOpen=true;roleFilter='';renderMembers();return}window.parent.postMessage({type:'quadruzz-prepare-picker'},'*')}
+function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}selectedRoleIndex=0;if(standaloneRole){pickerOpen=true;roleFilter='';renderMembers();return}window.parent.postMessage({type:'quadruzz-prepare-picker'},'*')}
 function viewSignature(){return JSON.stringify({members:latestData?.members,roles:latestData?.roleStatuses,images:latestImages,pendingRole})}
 function rolePickerMarkup(){
   const roles=matchingRoles();
-  return `<div class="role-picker"><input id="role-filter" maxlength="30" value="${esc(roleFilter)}" aria-label="Find or create role status" autocomplete="off" spellcheck="false"><div class="role-options">${roles.map((role,index)=>`<button class="role-option" data-index="${index}" type="button">${esc(role)}</button>`).join('')}</div></div>`;
+  return `<div class="role-picker"><input class="role-input" id="role-filter" maxlength="30" value="${esc(roleFilter)}" aria-label="Find or create role status" autocomplete="off" spellcheck="false"><div class="role-options">${roles.map((role,index)=>`<button class="role-option" data-index="${index}" type="button">${esc(role)}</button>`).join('')}</div></div>`;
 }
 function bindRolePicker(){
   if(!pickerOpen)return;
   const input=document.querySelector('#role-filter');
-  const options=()=>[...document.querySelectorAll('.role-option')];
-  input.addEventListener('input',event=>{roleFilter=event.target.value;renderMembers()});
-  input.addEventListener('keydown',event=>{
-    if(event.key==='Enter'){event.preventDefault();void chooseRole(input.value,true);return}
-    if(event.key==='Escape'){event.preventDefault();closeRolePicker();return}
-    if((event.key==='Tab'||event.key==='ArrowDown')&&options().length){event.preventDefault();event.stopPropagation();const items=options();items[event.shiftKey?items.length-1:0].focus()}
+  const options=[...document.querySelectorAll('.role-option')];
+  const normalizeSelection=()=>{
+    if(!options.length)selectedRoleIndex=-1;
+    else if(selectedRoleIndex>=options.length)selectedRoleIndex=0;
+  };
+  const paintSelection=()=>{
+    normalizeSelection();
+    input.classList.toggle('selected',selectedRoleIndex===-1);
+    options.forEach((button,index)=>button.classList.toggle('selected',selectedRoleIndex===index));
+  };
+  input.addEventListener('input',event=>{
+    roleFilter=event.target.value;
+    selectedRoleIndex=matchingRoles().length?0:-1;
+    renderMembers();
   });
-  options().forEach((button,index)=>{
-    button.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();void chooseRole(matchingRoles()[index],false)});
-    button.addEventListener('keydown',event=>{
-      if(event.key==='Enter'||event.key===' '){event.preventDefault();void chooseRole(matchingRoles()[index],false);return}
-      if(event.key==='Escape'){event.preventDefault();closeRolePicker();return}
-      if(event.key==='Tab'||event.key==='ArrowDown'||event.key==='ArrowUp'){
-        event.preventDefault();
-        const items=options();
-        const backwards=event.shiftKey||event.key==='ArrowUp';
-        const next=backwards?index-1:index+1;
-        if(next<0||next>=items.length)input.focus();else items[next].focus();
-      }
+  input.addEventListener('keydown',event=>{
+    if(event.key==='Enter'){
+      event.preventDefault();
+      if(selectedRoleIndex>=0)void chooseRole(matchingRoles()[selectedRoleIndex],false);
+      else void chooseRole(input.value,true);
+      return;
+    }
+    if(event.key==='Escape'){event.preventDefault();closeRolePicker();return}
+    if(event.key==='Tab'||event.key==='ArrowDown'||event.key==='ArrowUp'){
+      event.preventDefault();
+      if(event.repeat)return;
+      const backwards=event.shiftKey||event.key==='ArrowUp';
+      const count=options.length;
+      if(!count)selectedRoleIndex=-1;
+      else if(backwards)selectedRoleIndex=selectedRoleIndex===-1?count-1:selectedRoleIndex===0?-1:selectedRoleIndex-1;
+      else selectedRoleIndex=selectedRoleIndex===-1?0:selectedRoleIndex===count-1?-1:selectedRoleIndex+1;
+      paintSelection();
+    }
+  });
+  options.forEach((button,index)=>{
+    button.addEventListener('pointerdown',event=>{
+      event.preventDefault();
+      event.stopPropagation();
+      selectedRoleIndex=index;
+      void chooseRole(matchingRoles()[index],false);
     });
   });
+  paintSelection();
   input.focus();
   input.setSelectionRange(input.value.length,input.value.length);
 }

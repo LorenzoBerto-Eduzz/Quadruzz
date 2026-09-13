@@ -8,10 +8,10 @@ function styleFrame(frame, mode) {
   frame.style.width = roleOnly ? '163px' : '216px';
   frame.style.right = roleOnly ? '79px' : '72px';
   frame.style.borderRadius = roleOnly ? '2px' : '9px';
-  frame.style.boxShadow = roleOnly ? 'none' : '0 14px 38px rgba(0,0,0,.4)';
+  frame.style.boxShadow = 'none';
 }
 
-function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode }, '*'); }
+function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode, visible: revealRequested }, '*'); }
 
 function ensureFrame() {
   let frame = document.getElementById(FRAME_ID);
@@ -20,7 +20,7 @@ function ensureFrame() {
     frame.id = FRAME_ID;
     frame.src = chrome.runtime.getURL('popup.html');
     frame.title = 'Cross-Quadruzz';
-    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '216px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: '0 14px 38px rgba(0,0,0,.4)', colorScheme: 'dark', display: 'none' });
+    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '216px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', display: 'none' });
     (document.body || document.documentElement).append(frame);
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
@@ -33,13 +33,13 @@ function ensureFrame() {
         hide();
         try { chrome.runtime.sendMessage({ type: 'quadruzz-close' }).catch(() => {}); } catch {}
       }
-      if (event.data?.type === 'quadruzz-picker-visibility') frame.style.boxShadow = event.data.visible ? 'none' : (requestedMode === 'role' ? 'none' : '0 14px 38px rgba(0,0,0,.4)');
       if (event.data?.type === 'quadruzz-require-popup') {
         try { chrome.runtime.sendMessage({ type: 'quadruzz-force-popup' }).catch(() => {}); } catch {}
       }
       if (event.data?.type === 'quadruzz-ready') {
+        const firstReady = !frameReady;
         frameReady = true;
-        notifyMode(frame);
+        if (firstReady) notifyMode(frame);
         if (revealRequested) frame.style.display = 'block';
       }
     });
@@ -63,6 +63,8 @@ function hide() {
   const frame = document.getElementById(FRAME_ID);
   if (frame) {
     frame.style.display = 'none';
+    frame.blur();
+    window.focus();
     frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-hidden' }, '*');
   }
 }
