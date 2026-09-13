@@ -72,7 +72,7 @@ document.addEventListener('pointerdown', (event) => {
 }, true);
 window.addEventListener('keydown', (event) => {
   const popupToggle = event.code === 'KeyW' && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey;
-  const roleToggle = event.code === 'KeyD' && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
+  const roleToggle = event.code === 'KeyD' && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey;
   if (event.repeat || (!popupToggle && !roleToggle)) return;
   event.preventDefault();
   event.stopImmediatePropagation();

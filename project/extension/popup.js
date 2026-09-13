@@ -17,7 +17,7 @@ let roleLayoutFrame=null;
 let standaloneRole=false;
 
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
-window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.ctrlKey&&event.shiftKey&&!event.altKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle))return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:popupToggle?'quadruzz-toggle':'quadruzz-role-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
+window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle))return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:popupToggle?'quadruzz-toggle':'quadruzz-role-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
 chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView()});
 window.addEventListener('message',event=>{
   if(event.source!==parent)return;
