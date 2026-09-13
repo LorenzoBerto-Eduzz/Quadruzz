@@ -8,10 +8,15 @@ let latestImages=[];
 let pickerOpen=false;
 let roleFilter='';
 let savingRole=false;
+let pendingRole=null;
+let nextLoadSequence=0;
+let appliedLoadSequence=0;
 
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{if(event.repeat||event.code!=='KeyW'||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey)return;event.preventDefault();event.stopImmediatePropagation();try{const sent=chrome.runtime.sendMessage({type:'quadruzz-toggle'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
 chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started')connectingView();if(message?.type==='quadruzz-connect-complete')void loadMembers();if(message?.type==='quadruzz-connect-cancelled')signInView()});
+window.addEventListener('message',event=>{if(event.source===parent&&event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen)closeRolePicker()});
+document.addEventListener('pointerdown',event=>{if(pickerOpen&&!event.target.closest('.role-picker,.role-trigger'))closeRolePicker()});
 
 function storageCall(method,value){return new Promise((resolve,reject)=>{try{chrome.storage.local[method](value,result=>{try{const failure=chrome.runtime.lastError;if(failure)reject(new Error(failure.message));else resolve(result)}catch(error){reject(error)}})}catch(error){reject(error)}})}
 const storage={get:key=>storageCall('get',key),set:value=>storageCall('set',value),remove:key=>storageCall('remove',key)};
@@ -78,6 +83,7 @@ async function chooseRole(value,create){
   const label=String(value||'').trim().replace(/\s+/g,' ');
   if(!label||label.length>30||savingRole)return;
   savingRole=true;
+  pendingRole=label;
   const self=latestData?.members.find(member=>member.userId===latestData.currentUserId);
   const previous=self?.actingState;
   if(self)self.actingState=label;
@@ -88,15 +94,18 @@ async function chooseRole(value,create){
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
     if(!response.ok)throw new Error();
     const result=await response.json();
-    if(self&&result.actingState)self.actingState=result.actingState;
+    if(self&&result.actingState){self.actingState=result.actingState;pendingRole=result.actingState}
+    await loadMembers(true);
   }catch(error){
     if(stopInvalidContext(error))return;
+    pendingRole=null;
     if(self)self.actingState=previous;
     void loadMembers(true);
   }finally{savingRole=false;renderMembers()}
 }
 async function loadMembers(forceRender=false){
   if(stopped)return;
+  const sequence=++nextLoadSequence;
   try{
     const{token}=await storage.get('token');
     if(!token){if(await connectionPending())connectingView();else signInView();return}
@@ -109,6 +118,13 @@ async function loadMembers(forceRender=false){
     await pulseActivity();
     data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));
     const images=await Promise.all(data.members.map(member=>memberImage(member,token)));
+    if(sequence<appliedLoadSequence)return;
+    appliedLoadSequence=sequence;
+    const self=data.members.find(member=>member.userId===data.currentUserId);
+    if(pendingRole){
+      if(!savingRole&&self?.actingState===pendingRole)pendingRole=null;
+      else if(self)self.actingState=pendingRole;
+    }
     latestData=data;
     latestImages=images;
     if(!pickerOpen||forceRender)renderMembers();

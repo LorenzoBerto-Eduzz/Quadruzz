@@ -44,6 +44,12 @@ window.addEventListener('message', (event) => {
   } catch { /* Extension was reloaded while this page remained open. */ }
 });
 
+document.addEventListener('pointerdown', (event) => {
+  const frame = document.getElementById(FRAME_ID);
+  if (frame?.style.display === 'block' && event.target !== frame) {
+    frame.contentWindow?.postMessage({ type: 'quadruzz-dismiss-menus' }, '*');
+  }
+}, true);
 window.addEventListener('keydown', (event) => {
   if (event.repeat || event.code !== 'KeyW' || !event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey) return;
   event.preventDefault();
