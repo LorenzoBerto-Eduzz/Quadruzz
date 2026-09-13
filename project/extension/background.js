@@ -99,7 +99,7 @@ async function toggle(tab) {
   const activeTabId = tab?.id || state.activeTabId;
   const panel = mode === 'popup' && (state.mode === 'role' || state.mode === 'note') ? state.mode : null;
   if (panel) {
-    await tell(activeTabId, 'quadruzz-hide');
+    await tell(activeTabId, 'quadruzz-suspend');
     await new Promise((resolve) => setTimeout(resolve, 34));
   }
   await chrome.storage.session.set({ overlayMode: mode, activeTabId });

@@ -25,7 +25,7 @@ function ensureFrame() {
     frame.id = FRAME_ID;
     frame.src = chrome.runtime.getURL('popup.html');
     frame.title = 'Cross-Quadruzz';
-    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '216px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'none' });
+    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '216px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'block' });
     (document.body || document.documentElement).append(frame);
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
@@ -91,7 +91,7 @@ function show(mode = 'popup', panel = null) {
   const frame = ensureFrame();
   frame.style.opacity = '0';
   frame.style.pointerEvents = 'none';
-  frame.style.visibility = 'visible';
+  frame.style.visibility = 'hidden';
   frame.style.display = 'block';
   styleFrame(frame, mode);
   if (mode === 'role' || mode === 'note' || panel === 'role' || panel === 'note') {
@@ -100,6 +100,18 @@ function show(mode = 'popup', panel = null) {
   if (currentPresentationId === presentationId && revealRequested) notifyMode(frame);
 }
 
+function suspend() {
+  presentationId += 1;
+  revealRequested = false;
+  if (revealFrame !== null) cancelAnimationFrame(revealFrame);
+  revealFrame = null;
+  const frame = document.getElementById(FRAME_ID);
+  if (!frame) return;
+  frame.style.opacity = '0';
+  frame.style.pointerEvents = 'none';
+  frame.style.visibility = 'hidden';
+  frame.style.display = 'block';
+}
 function hide() {
   presentationId += 1;
   revealRequested = false;
@@ -112,7 +124,7 @@ function hide() {
     frame.style.opacity = '0';
     frame.style.pointerEvents = 'none';
     frame.style.visibility = 'hidden';
-    frame.style.display = 'none';
+    frame.style.display = 'block';
     frame.blur();
     window.focus();
     frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-hidden' }, '*');
@@ -120,6 +132,7 @@ function hide() {
 }
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'quadruzz-show') show(message.mode, message.panel);
+  if (message?.type === 'quadruzz-suspend') suspend();
   if (message?.type === 'quadruzz-hide') hide();
   if (message?.type === 'quadruzz-role-toggle-open') document.getElementById(FRAME_ID)?.contentWindow?.postMessage({ type: 'quadruzz-role-toggle' }, '*');
   if (message?.type === 'quadruzz-note-toggle-open') document.getElementById(FRAME_ID)?.contentWindow?.postMessage({ type: 'quadruzz-note-toggle' }, '*');
