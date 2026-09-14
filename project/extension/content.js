@@ -3,7 +3,6 @@ let revealRequested = false;
 let requestedMode = 'popup';
 let frameReady = false;
 let presentationId = 0;
-let carriedPanel = null;
 let revealFrame = null;
 
 function styleFrame(frame, mode) {
@@ -18,7 +17,7 @@ function styleFrame(frame, mode) {
   frame.style.transform = 'none';
 }
 
-function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode, visible: revealRequested, presentationId, carriedPanel }, '*'); }
+function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode, visible: revealRequested, presentationId }, '*'); }
 
 function ensureFrame() {
   let frame = document.getElementById(FRAME_ID);
@@ -43,38 +42,31 @@ function ensureFrame() {
       if (event.data?.type === 'quadruzz-require-popup') {
         try { chrome.runtime.sendMessage({ type: 'quadruzz-force-popup' }).catch(() => {}); } catch {}
       }
+      if (event.data?.type === 'quadruzz-panels-reset') {
+        if (event.data.presentationId === presentationId && revealRequested && requestedMode === 'popup') notifyMode(frame);
+        return;
+      }
       if (event.data?.type === 'quadruzz-ready') {
         const firstReady = !frameReady;
         frameReady = true;
         if (firstReady) { notifyMode(frame); return; }
         if (event.data.presentationId !== presentationId) return;
         if (revealRequested) {
-          const readyPresentationId = presentationId;
           const readyHeight = Number(event.data.height);
           if (Number.isFinite(readyHeight)) {
             frame.style.height = `${Math.min(window.innerHeight - 6, Math.max(24, readyHeight))}px`;
           }
           if (revealFrame !== null) cancelAnimationFrame(revealFrame);
-          revealFrame = requestAnimationFrame(() => {
-            if (!revealRequested || readyPresentationId !== presentationId) { revealFrame = null; return; }
-            revealFrame = requestAnimationFrame(() => {
-              revealFrame = null;
-              if (!revealRequested || readyPresentationId !== presentationId) return;
-              frame.style.display = 'block';
-              frame.style.visibility = 'visible';
-              frame.style.opacity = '1';
-              frame.style.pointerEvents = 'auto';
-              const needsInputFocus =
-                requestedMode === 'role' ||
-                requestedMode === 'note' ||
-                carriedPanel === 'role' ||
-                carriedPanel === 'note';
-              if (needsInputFocus) {
-                frame.focus({ preventScroll: true });
-                frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
-              }
-            });
-          });
+          revealFrame = null;
+          frame.style.display = 'block';
+          frame.style.visibility = 'visible';
+          frame.style.opacity = '1';
+          frame.style.pointerEvents = 'auto';
+          const needsInputFocus = requestedMode === 'role' || requestedMode === 'note';
+          frame.contentWindow?.postMessage({ type: 'quadruzz-presented', presentationId }, '*');
+          if (needsInputFocus) {
+            frame.focus({ preventScroll: true });
+          }
         }
       }
     });
@@ -82,44 +74,34 @@ function ensureFrame() {
   return frame;
 }
 
-function show(mode = 'popup', panel = null) {
+function show(mode = 'popup') {
   presentationId += 1;
   if (revealFrame !== null) cancelAnimationFrame(revealFrame);
   revealFrame = null;
   const currentPresentationId = presentationId;
   revealRequested = true;
   requestedMode = mode;
-  carriedPanel = panel;
   const frame = ensureFrame();
   frame.style.opacity = '0';
   frame.style.pointerEvents = 'none';
   frame.style.visibility = 'hidden';
   frame.style.display = 'block';
   styleFrame(frame, mode);
-  if (mode === 'role' || mode === 'note' || panel === 'role' || panel === 'note') {
+  if (mode === 'role' || mode === 'note') {
     frame.style.height = `${window.innerHeight - 6}px`;
   }
-  if (currentPresentationId === presentationId && revealRequested) notifyMode(frame);
+  if (currentPresentationId !== presentationId || !revealRequested) return;
+  if (mode === 'popup' && frameReady) {
+    frame.contentWindow?.postMessage({ type: 'quadruzz-reset-panels', presentationId: currentPresentationId }, '*');
+    return;
+  }
+  notifyMode(frame);
 }
 
-function suspend() {
-  presentationId += 1;
-  revealRequested = false;
-  if (revealFrame !== null) cancelAnimationFrame(revealFrame);
-  revealFrame = null;
-  const frame = document.getElementById(FRAME_ID);
-  if (!frame) return;
-  frame.contentWindow?.postMessage({ type: 'quadruzz-transfer-suspend' }, '*');
-  frame.style.opacity = '0';
-  frame.style.pointerEvents = 'none';
-  frame.style.visibility = 'hidden';
-  frame.style.display = 'block';
-}
 function hide() {
   presentationId += 1;
   revealRequested = false;
   requestedMode = 'hidden';
-  carriedPanel = null;
   if (revealFrame !== null) cancelAnimationFrame(revealFrame);
   revealFrame = null;
   const frame = document.getElementById(FRAME_ID);
@@ -134,8 +116,7 @@ function hide() {
   }
 }
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === 'quadruzz-show') show(message.mode, message.panel);
-  if (message?.type === 'quadruzz-suspend') suspend();
+  if (message?.type === 'quadruzz-show') show(message.mode);
   if (message?.type === 'quadruzz-hide') hide();
   if (message?.type === 'quadruzz-role-toggle-open') document.getElementById(FRAME_ID)?.contentWindow?.postMessage({ type: 'quadruzz-role-toggle' }, '*');
   if (message?.type === 'quadruzz-note-toggle-open') document.getElementById(FRAME_ID)?.contentWindow?.postMessage({ type: 'quadruzz-note-toggle' }, '*');
@@ -164,7 +145,7 @@ document.addEventListener('pointerdown', (event) => {
   }
 }, true);
 window.addEventListener('keydown', (event) => {
-  const popupToggle = event.code === 'KeyW' && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey;
+  const popupToggle = event.code === 'KeyQ' && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey;
   const roleToggle = event.code === 'KeyD' && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey;
   const noteToggle = event.code === 'KeyS' && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey;
   if (event.repeat || (!popupToggle && !roleToggle && !noteToggle)) return;

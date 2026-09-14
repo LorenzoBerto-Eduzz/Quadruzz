@@ -28,7 +28,7 @@ The agreed initial product direction is:
 - heartbeat-based presence expiry; and
 - future shared state backed by Sites storage.
 
-The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+W toggles the member popup; Alt+Shift+D toggles the shared acting-status picker; Alt+Shift+S toggles the shared-note editor. Hidden mode receives five-second stacked notifications for new notes from other members. Version `0.1.0` has been submitted for Chrome Web Store review while local development continues.
+The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+Q toggles the member popup; Alt+Shift+D toggles the shared acting-status picker; Alt+Shift+S toggles the shared-note editor. Hidden mode receives five-second stacked notifications for new notes from other members. Version `0.1.0` has been submitted for Chrome Web Store review while local development continues.
 
 ## Run And Test Commands
 
@@ -58,7 +58,7 @@ Keep this brief summary current. Put detailed build, export, package, deployment
 - Do not deploy or alter live Site access without explicit owner authorization.
 - Keep the interface minimal and extend only owner-approved functionality.
 - Treat profiles, presence, and shared workspace data as authenticated, privacy-sensitive data.
-- Treat recent authenticated Companion traffic as canonical activity. The member-list GET renews activity because Chrome may suspend background workers and suppress separate heartbeat POSTs; expire activity after 90 seconds without extension traffic.
+- Treat recent authenticated Companion traffic as canonical activity. The member-list GET renews activity at least every 10 seconds when needed because Chrome may suspend background workers and suppress separate heartbeat POSTs; expire activity after 30 seconds without extension traffic.
 - Continue using the existing Sites D1 and R2 bindings for shared state and profile images.
 - Preserve the existing Vinext/npm structure and lockfile unless a requested change requires otherwise.
 

@@ -1,6 +1,6 @@
 import { getDb } from '@/db';
 import { authenticateExtensionIdentity } from '@/lib/extension-auth';
-import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS } from '@/lib/extension-activity';
+import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS, EXTENSION_READER_REFRESH_MS } from '@/lib/extension-activity';
 import { markOnline, markSessionClosed } from '@/lib/activity-log';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     await expireStaleExtensionSessions(now);
     const members = (await db.prepare(`SELECT m.user_id AS userId,m.display_name AS displayName,m.updated_at AS imageVersion,m.acting_state AS actingState,m.note,m.note_updated_at AS noteUpdatedAt,MAX(e.last_seen_at) AS extensionLastSeen,MAX(CASE WHEN e.last_seen_at>=? THEN 1 ELSE 0 END) AS extensionActive FROM members m LEFT JOIN extension_sessions e ON e.user_id=m.user_id WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL GROUP BY m.user_id ORDER BY extensionActive DESC,m.join_order ASC`).bind(now - EXTENSION_ACTIVE_AFTER_MS).all()).results as Array<Record<string, unknown>>;
     const viewer = members.find((member) => member.userId === userId);
-    if (viewer && Number(viewer.extensionLastSeen || 0) < now - 30_000) {
+    if (viewer && Number(viewer.extensionLastSeen || 0) < now - EXTENSION_READER_REFRESH_MS) {
       await db.prepare('INSERT INTO extension_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(`reader:${userId}`, userId, now).run();
       viewer.extensionActive = 1;
       members.sort((a, b) => Number(Boolean(b.extensionActive)) - Number(Boolean(a.extensionActive)));

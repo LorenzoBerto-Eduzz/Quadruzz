@@ -1,12 +1,19 @@
 {
   "manifest_version": 3,
+  "minimum_chrome_version": "127",
   "name": "Cross-Quadruzz",
   "version": "0.1.0",
   "description": "Quick access to Cross-Quadruzz from any Chrome tab.",
-  "action": { "default_title": "Toggle Cross-Quadruzz" },
+  "icons": { "16": "icon.png", "32": "icon.png", "48": "icon.png", "128": "icon.png" },
+  "action": { "default_title": "Toggle Cross-Quadruzz", "default_icon": "icon.png", "default_popup": "popup.html" },
   "background": { "service_worker": "background.js" },
-  "permissions": ["storage", "tabs", "alarms"],
+  "permissions": ["storage", "tabs", "alarms", "notifications", "offscreen", "scripting"],
   "host_permissions": ["https://cross-quadruzz.l-busslerberto.chatgpt.site/*"],
   "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["content.js"], "run_at": "document_idle" }],
-  "web_accessible_resources": [{ "resources": ["popup.html", "popup.css", "popup.js"], "matches": ["http://*/*", "https://*/*"] }]
+  "commands": {
+    "toggle-cross-member-popup-q": { "suggested_key": { "default": "Alt+Shift+Q" }, "description": "Toggle the Cross member popup" },
+    "toggle-role": { "suggested_key": { "default": "Alt+Shift+D" }, "description": "Change Cross role status" },
+    "toggle-note": { "suggested_key": { "default": "Alt+Shift+S" }, "description": "Send a Cross note" }
+  },
+  "web_accessible_resources": [{ "resources": ["popup.html", "popup-bootstrap.js", "popup.css", "popup.js"], "matches": ["http://*/*", "https://*/*"] }]
 }
