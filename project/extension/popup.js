@@ -19,6 +19,7 @@ let pendingNoteSet=false;
 let pendingNoteUpdatedAt=null;
 let nextLoadSequence=0;
 let appliedLoadSequence=0;
+let appliedAccessSequence=0;
 let lastRenderSignature='';
 let pickerDesiredHeight=0;
 let roleLayoutFrame=null;
@@ -130,8 +131,8 @@ function esc(value){const node=document.createElement('span');node.textContent=v
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
 function hideOverlayNow(){window.parent.postMessage({type:'quadruzz-hide-now'},'*')}
-function closeRolePicker(){if(standaloneRole){hideOverlayNow();return}pickerOpen=false;roleFilter='';renderMembers()}
-function closeNoteEditor(){if(standaloneNote){hideOverlayNow();return}noteOpen=false;noteDraft='';noteLastValid='';renderMembers()}
+function closeRolePicker(){if(standaloneRole){pickerOpen=false;standaloneRole=false;roleFilter='';document.querySelector('.role-picker')?.remove();hideOverlayNow();return}pickerOpen=false;roleFilter='';renderMembers()}
+function closeNoteEditor(){if(standaloneNote){noteOpen=false;standaloneNote=false;noteDraft='';noteLastValid='';document.querySelector('.note-editor')?.remove();hideOverlayNow();return}noteOpen=false;noteDraft='';noteLastValid='';renderMembers()}
 function preparePanel(panel){pendingPanel=panel;window.parent.postMessage({type:'quadruzz-prepare-picker'},'*')}
 function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}noteOpen=false;selectedRoleIndex=0;roleFilter='';if(standaloneRole){pickerOpen=true;renderMembers();return}preparePanel('role')}
 function requestNoteToggle(){if(noteOpen){closeNoteEditor();return}pickerOpen=false;noteDraft='';noteLastValid='';if(standaloneNote){noteOpen=true;renderMembers();return}preparePanel('note')}
@@ -360,6 +361,8 @@ async function loadMembers(forceRender=false){
     if(response.status===401){try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'none'})}catch{}latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}if(await connectionPending())connectingView();else signInView();return}
     if(!response.ok)throw new Error();
     const data=await response.json();
+    if(sequence<appliedAccessSequence)return;
+    appliedAccessSequence=sequence;
     if(data.accessState==='pending'){try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'pending'})}catch{}latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;waitingView();return}
     if(data.accessState!=='approved'){try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'none'})}catch{}latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;await storage.remove('token');try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}signInView();return}
     try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'approved'})}catch{}

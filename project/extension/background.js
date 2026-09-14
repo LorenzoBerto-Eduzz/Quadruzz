@@ -27,21 +27,26 @@ async function resetState() { await chrome.storage.session.set({ overlayMode: 'h
 
 async function deliverNoteNotification(notification) {
   if (!notification?.userId || !notification?.note || !notification?.noteUpdatedAt) return;
-  const key = `${notification.userId}:${notification.noteUpdatedAt}`;
+  const key = notification.userId + ':' + notification.noteUpdatedAt;
   const now = Date.now();
   for (const [seenKey, seenAt] of seenNoteNotifications) if (now - seenAt > 10000) seenNoteNotifications.delete(seenKey);
   if (seenNoteNotifications.has(key)) return;
+  const storedSeen = await chrome.storage.session.get('seenNoteNotificationKeys');
+  const persistedSeen = storedSeen.seenNoteNotificationKeys || {};
+  if (now - Number(persistedSeen[key] || 0) <= 10000) return;
   seenNoteNotifications.set(key, now);
+  persistedSeen[key] = now;
+  for (const [storedKey, storedAt] of Object.entries(persistedSeen)) if (now - Number(storedAt) > 10000) delete persistedSeen[storedKey];
+  await chrome.storage.session.set({ seenNoteNotificationKeys: persistedSeen });
   const state = await getState();
   if (state.mode === 'popup') return;
-  let tabId = state.activeTabId;
+  let tabId = state.mode === 'role' || state.mode === 'note' ? state.activeTabId : null;
   if (!tabId) {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     tabId = tab?.id;
   }
   await tell(tabId, 'quadruzz-note-notification', undefined, notification);
 }
-
 async function clearNoteNotifications(tabId) {
   await tell(tabId, 'quadruzz-clear-notifications');
 }
@@ -99,11 +104,11 @@ async function rememberAccess(state) {
     await chrome.storage.session.set({ cachedAccessState: state, cachedAccessAt });
   }
 }
-async function accessState() {
-  if (Date.now() - cachedAccessAt <= ACCESS_CACHE_MS) return cachedAccessState;
+async function accessState(force = false) {
+  if (!force && Date.now() - cachedAccessAt <= ACCESS_CACHE_MS) return cachedAccessState;
   try {
     const cached = await chrome.storage.session.get(['cachedAccessState', 'cachedAccessAt']);
-    if (Date.now() - Number(cached.cachedAccessAt || 0) <= ACCESS_CACHE_MS) { cachedAccessState = cached.cachedAccessState; cachedAccessAt = cached.cachedAccessAt; return cachedAccessState; }
+    if (!force && Date.now() - Number(cached.cachedAccessAt || 0) <= ACCESS_CACHE_MS) { cachedAccessState = cached.cachedAccessState; cachedAccessAt = cached.cachedAccessAt; return cachedAccessState; }
     const stored = await chrome.storage.local.get('token');
     if (!stored.token) { cachedAccessState = 'none'; cachedAccessAt = Date.now(); return 'none'; }
     const response = await fetch(BASE + '/api/extension', { headers: { authorization: 'Bearer ' + stored.token }, cache: 'no-store' });
@@ -174,7 +179,8 @@ async function toggle(tab) {
 async function togglePanel(tab, panel) {
   const state = await getState();
   const activeTabId = tab?.id || state.activeTabId;
-  const currentAccess = await accessState();
+  let currentAccess = await accessState();
+  if (currentAccess !== 'approved') currentAccess = await accessState(true);
   if (currentAccess !== 'approved') {
     await applyAccessView(activeTabId, currentAccess);
     return;
