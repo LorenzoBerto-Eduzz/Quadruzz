@@ -6,6 +6,8 @@ let cachedAccessState = 'unknown';
 let cachedAccessAt = 0;
 const ACCESS_CACHE_MS = 3000;
 let connectionOpening = null;
+let overlayOperation = Promise.resolve();
+function queueOverlay(operation) { overlayOperation = overlayOperation.then(operation, operation); return overlayOperation; }
 
 async function tell(tabId, type, mode, panel = null) {
   if (!tabId) return;
@@ -240,15 +242,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'quadruzz-membership-lost') void applyAccessView(sender.tab?.id, 'none');
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-note-notification') void deliverNoteNotification(message.notification);
-  if (message?.type === 'quadruzz-toggle' && acceptShortcut(message.type)) void toggle(sender.tab);
-  if (message?.type === 'quadruzz-role-toggle' && acceptShortcut(message.type)) void toggleRole(sender.tab);
-  if (message?.type === 'quadruzz-note-toggle' && acceptShortcut(message.type)) void toggleNote(sender.tab);
+  if (message?.type === 'quadruzz-toggle' && acceptShortcut(message.type)) void queueOverlay(() => toggle(sender.tab));
+  if (message?.type === 'quadruzz-role-toggle' && acceptShortcut(message.type)) void queueOverlay(() => toggleRole(sender.tab));
+  if (message?.type === 'quadruzz-note-toggle' && acceptShortcut(message.type)) void queueOverlay(() => toggleNote(sender.tab));
   if (message?.type === 'quadruzz-force-popup') {
-    void chrome.storage.session.set({ overlayMode: 'popup', activeTabId: sender.tab?.id }).then(() => tell(sender.tab?.id, 'quadruzz-show', 'popup'));
+    void queueOverlay(async () => {
+      await chrome.storage.session.set({ overlayMode: 'popup', activeTabId: sender.tab?.id });
+      await tell(sender.tab?.id, 'quadruzz-show', 'popup');
+    });
   }
   if (message?.type === 'quadruzz-close') {
-    void chrome.storage.session.set({ overlayMode: 'hidden' });
-    void tell(sender.tab?.id, 'quadruzz-hide');
+    void queueOverlay(async () => {
+      await chrome.storage.session.set({ overlayMode: 'hidden' });
+      await tell(sender.tab?.id, 'quadruzz-hide');
+    });
   }
   if (message?.type === 'quadruzz-shortcuts') void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 });

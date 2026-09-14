@@ -22,8 +22,9 @@ export async function POST(request: Request) {
       const next = await db.prepare('SELECT COALESCE(MAX(join_order),0)+1 AS value FROM members').first<{value: number}>();
       await db.batch([
         db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,acting_state,last_seen_at,created_at,updated_at) VALUES (?,?,'member','approved',?,?,?,'',NULL,?,?)
-          ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,role='member',status='approved',display_name=excluded.display_name,profile_image_key=excluded.profile_image_key,acting_state=excluded.acting_state,last_seen_at=NULL,updated_at=excluded.updated_at`).bind(targetId, pending.email, next?.value || 1, pending.display_name, pending.profile_image_key, now, now),
+          ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,role='member',status='approved',display_name=excluded.display_name,profile_image_key=excluded.profile_image_key,acting_state=excluded.acting_state,note=NULL,note_updated_at=NULL,last_seen_at=NULL,updated_at=excluded.updated_at`).bind(targetId, pending.email, next?.value || 1, pending.display_name, pending.profile_image_key, now, now),
         db.prepare('DELETE FROM access_requests WHERE user_id=?').bind(targetId),
+        db.prepare('DELETE FROM extension_sessions WHERE user_id=?').bind(targetId),
       ]);
       await recordActivity(`${actor.display_name || user.email} approved ${pending.display_name}`, now);
     } else if (body.action === 'reject') {

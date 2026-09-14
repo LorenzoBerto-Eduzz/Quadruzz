@@ -14,6 +14,8 @@ function styleFrame(frame, mode) {
   frame.style.right = roleOnly || noteOnly || notificationOnly ? '79px' : '72px';
   frame.style.borderRadius = roleOnly || noteOnly || notificationOnly ? '2px' : '9px';
   frame.style.boxShadow = 'none';
+  frame.style.transform = 'scale(1.1)';
+  frame.style.transformOrigin = 'top right';
 }
 
 function notifyMode(frame) { frame.contentWindow?.postMessage({ type: 'quadruzz-overlay-mode', mode: requestedMode, visible: revealRequested, presentationId, carriedPanel }, '*'); }
@@ -25,7 +27,7 @@ function ensureFrame() {
     frame.id = FRAME_ID;
     frame.src = chrome.runtime.getURL('popup.html');
     frame.title = 'Cross-Quadruzz';
-    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '248px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'block' });
+    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '248px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', transform: 'scale(1.1)', transformOrigin: 'top right', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'block' });
     (document.body || document.documentElement).append(frame);
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
