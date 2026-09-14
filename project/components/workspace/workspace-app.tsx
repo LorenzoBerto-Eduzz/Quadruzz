@@ -190,9 +190,6 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     return () => { cancelled = true; if (timer !== undefined) window.clearTimeout(timer); };
   }, [accessState, busy, refresh]);
   useEffect(() => {
-    if (extensionAuthorizeUrl && (data.accessState === 'approved' || data.accessState === 'pending')) window.location.replace(extensionAuthorizeUrl);
-  }, [data.accessState, extensionAuthorizeUrl]);
-  useEffect(() => {
     const synchronizeVisiblePage = () => {
       if (document.visibilityState === 'visible') void refresh();
     };

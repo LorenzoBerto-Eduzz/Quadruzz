@@ -2,6 +2,7 @@ const BASE='https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const app=document.querySelector('#app');
 const imageUrls=new Map();
 let refreshTimer=null;
+let connectInProgress=false;
 let stopped=false;
 let latestData=null;
 let latestImages=[];
@@ -56,7 +57,7 @@ function notificationHeight(){if(!notifications.length)return 0;return notificat
 function detectNoteNotifications(data){const next=new Map();for(const member of data.members){const version=Number(member.noteUpdatedAt||0);next.set(member.userId,version);if(notesInitialized&&member.userId!==data.currentUserId&&member.note&&version&&knownNoteVersions.get(member.userId)!==version){try{const sent=chrome.runtime.sendMessage({type:'quadruzz-note-notification',notification:{userId:member.userId,displayName:member.displayName,actingState:member.actingState,note:member.note,noteUpdatedAt:version}});if(sent?.catch)sent.catch(()=>{})}catch{/* Extension context closed. */}}}knownNoteVersions.clear();for(const [userId,version] of next)knownNoteVersions.set(userId,version);notesInitialized=true}
 document.querySelector('#close').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{const popupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const roleToggle=event.code==='KeyD'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;const noteToggle=event.code==='KeyS'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;if(event.repeat||(!popupToggle&&!roleToggle&&!noteToggle))return;event.preventDefault();event.stopImmediatePropagation();try{const type=popupToggle?'quadruzz-toggle':roleToggle?'quadruzz-role-toggle':'quadruzz-note-toggle';const sent=chrome.runtime.sendMessage({type});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}},true);
-chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started'||message?.type==='quadruzz-access-checking')connectingView();if(message?.type==='quadruzz-connect-complete'||message?.type==='quadruzz-access-approved')void loadMembers(true);if(message?.type==='quadruzz-connect-cancelled')signInView();if(message?.type==='quadruzz-access-pending')waitingView()});
+chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started'||message?.type==='quadruzz-access-checking'){connectInProgress=true;connectingView()}if(message?.type==='quadruzz-connect-complete'||message?.type==='quadruzz-access-approved'){connectInProgress=false;void loadMembers(true)}if(message?.type==='quadruzz-connect-cancelled'){connectInProgress=false;signInView()}if(message?.type==='quadruzz-access-pending'){connectInProgress=false;waitingView()}});
 window.addEventListener('message',event=>{
   if(event.source!==parent)return;
   if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
@@ -106,8 +107,8 @@ async function pulseActivity(){try{const stored=await storage.get(['token','exte
 function requireFullPopup(){if(standaloneRole||standaloneNote)window.parent.postMessage({type:'quadruzz-require-popup'},'*')}
 function connectingView(){requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" disabled>Connecting to Cross…</button></div>';reportReady()}
 function waitingView(){requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" id="open-hq">Waiting for approval</button></div>';document.querySelector('#open-hq').addEventListener('click',()=>chrome.runtime.sendMessage({type:'quadruzz-open-hq'}));reportReady()}
-function signInView(){requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" id="sign-in">Connect to Cross</button></div>';document.querySelector('#sign-in').addEventListener('click',signIn);reportReady()}
-async function signIn(){connectingView();try{await chrome.runtime.sendMessage({type:'quadruzz-connect'})}catch{signInView()}}
+function signInView(){if(connectInProgress){connectingView();return}requireFullPopup();app.innerHTML='<div class="connect"><button class="primary" id="sign-in">Connect to Cross</button></div>';document.querySelector('#sign-in').addEventListener('click',signIn);reportReady()}
+async function signIn(){if(connectInProgress)return;connectInProgress=true;connectingView();try{await chrome.runtime.sendMessage({type:'quadruzz-connect'})}catch{connectInProgress=false;signInView()}}
 async function connectionPending(){try{return Boolean((await chrome.runtime.sendMessage({type:'quadruzz-connect-state'}))?.connecting)}catch{return false}}
 async function memberImage(member,token){const key=`${member.userId}:${member.imageVersion}`;if(imageUrls.has(key))return imageUrls.get(key);const response=await fetch(`${BASE}/api/extension/profile-image?user=${encodeURIComponent(member.userId)}&v=${member.imageVersion}`,{headers:{authorization:`Bearer ${token}`}});if(!response.ok)return'';const url=URL.createObjectURL(await response.blob());imageUrls.set(key,url);return url}
 function formatNoteTime(value){const date=new Date(Number(value));if(Number.isNaN(date.getTime()))return'';const now=new Date();const pad=number=>String(number).padStart(2,'0');return date.toDateString()===now.toDateString()?pad(date.getHours())+':'+pad(date.getMinutes()):pad(date.getMonth()+1)+'/'+pad(date.getDate())}

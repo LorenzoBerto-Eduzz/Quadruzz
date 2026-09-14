@@ -4,7 +4,8 @@ const CONNECT_TAB_KEY = 'connectTabId';
 const seenNoteNotifications = new Map();
 let cachedAccessState = 'unknown';
 let cachedAccessAt = 0;
-const ACCESS_CACHE_MS = 750;
+const ACCESS_CACHE_MS = 3000;
+let connectionOpening = null;
 
 async function tell(tabId, type, mode, panel = null) {
   if (!tabId) return;
@@ -47,20 +48,24 @@ function connectionCallbackUrl() { return `https://${chrome.runtime.id}.chromium
 function connectionAuthorizationUrl() { return BASE + '/extension/authorize?redirect_uri=' + encodeURIComponent(connectionCallbackUrl()); }
 
 async function openConnectionTab() {
-  await broadcast('quadruzz-connect-started');
-  const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
-  if (stored.connectTabId) {
-    try {
-      const existing = await chrome.tabs.get(stored.connectTabId);
-      await chrome.tabs.update(existing.id, { active: true });
-      if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
-      return;
-    } catch { await chrome.storage.session.remove(CONNECT_TAB_KEY); }
-  }
-  const tab = await chrome.tabs.create({ url: connectionAuthorizationUrl(), active: true });
-  if (tab.id) await chrome.storage.session.set({ connectTabId: tab.id });
+  if (connectionOpening) return connectionOpening;
+  connectionOpening = (async () => {
+    const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
+    if (stored.connectTabId) {
+      try {
+        const existing = await chrome.tabs.get(stored.connectTabId);
+        await chrome.tabs.update(existing.id, { active: true });
+        if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
+        await broadcast('quadruzz-connect-started');
+        return;
+      } catch { await chrome.storage.session.remove(CONNECT_TAB_KEY); }
+    }
+    const tab = await chrome.tabs.create({ url: connectionAuthorizationUrl(), active: true });
+    if (tab.id) await chrome.storage.session.set({ connectTabId: tab.id });
+    await broadcast('quadruzz-connect-started');
+  })();
+  try { await connectionOpening; } finally { connectionOpening = null; }
 }
-
 async function completeConnection(tabId, url) {
   const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
   if (stored.connectTabId !== tabId || !url.startsWith(connectionCallbackUrl())) return false;
@@ -76,21 +81,27 @@ async function completeConnection(tabId, url) {
 }
 
 async function ensureAccessCredential() {
+  cachedAccessState = 'pending';
+  cachedAccessAt = Date.now();
   await broadcast('quadruzz-access-pending');
-  const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
-  if (stored.connectTabId) {
-    try {
-      await chrome.tabs.update(stored.connectTabId, { url: connectionAuthorizationUrl(), active: false });
-      return;
-    } catch { await chrome.storage.session.remove(CONNECT_TAB_KEY); }
-  }
+  await chrome.storage.session.remove(CONNECT_TAB_KEY);
   const tab = await chrome.tabs.create({ url: connectionAuthorizationUrl(), active: false });
   if (tab.id) await chrome.storage.session.set({ connectTabId: tab.id });
 }
 
+async function rememberAccess(state) {
+  cachedAccessState = state;
+  cachedAccessAt = Date.now();
+  const stored = await chrome.storage.session.get(['cachedAccessState', 'cachedAccessAt']);
+  if (stored.cachedAccessState !== state || Date.now() - Number(stored.cachedAccessAt || 0) > 2000) {
+    await chrome.storage.session.set({ cachedAccessState: state, cachedAccessAt });
+  }
+}
 async function accessState() {
   if (Date.now() - cachedAccessAt <= ACCESS_CACHE_MS) return cachedAccessState;
   try {
+    const cached = await chrome.storage.session.get(['cachedAccessState', 'cachedAccessAt']);
+    if (Date.now() - Number(cached.cachedAccessAt || 0) <= ACCESS_CACHE_MS) { cachedAccessState = cached.cachedAccessState; cachedAccessAt = cached.cachedAccessAt; return cachedAccessState; }
     const stored = await chrome.storage.local.get('token');
     if (!stored.token) { cachedAccessState = 'none'; cachedAccessAt = Date.now(); return 'none'; }
     const response = await fetch(BASE + '/api/extension', { headers: { authorization: 'Bearer ' + stored.token }, cache: 'no-store' });
@@ -221,7 +232,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void chrome.storage.session.get(CONNECT_TAB_KEY).then((stored) => sendResponse({ connecting: Boolean(stored.connectTabId) }));
     return true;
   }
-  if (message?.type === 'quadruzz-access-state') { cachedAccessState = message.state; cachedAccessAt = Date.now(); }
+  if (message?.type === 'quadruzz-access-state') void rememberAccess(message.state);
   if (message?.type === 'quadruzz-account-changing') {
     void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => { cachedAccessState = 'none'; cachedAccessAt = Date.now(); return broadcast('quadruzz-connect-cancelled'); });
   }
