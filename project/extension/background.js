@@ -2,6 +2,9 @@ const BASE = 'https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const ACTIVITY_ALARM = 'cross-quadruzz-activity';
 const CONNECT_TAB_KEY = 'connectTabId';
 const seenNoteNotifications = new Map();
+let cachedAccessState = 'unknown';
+let cachedAccessAt = 0;
+const ACCESS_CACHE_MS = 750;
 
 async function tell(tabId, type, mode, panel = null) {
   if (!tabId) return;
@@ -86,17 +89,20 @@ async function ensureAccessCredential() {
 }
 
 async function accessState() {
+  if (Date.now() - cachedAccessAt <= ACCESS_CACHE_MS) return cachedAccessState;
   try {
     const stored = await chrome.storage.local.get('token');
-    if (!stored.token) return 'none';
+    if (!stored.token) { cachedAccessState = 'none'; cachedAccessAt = Date.now(); return 'none'; }
     const response = await fetch(BASE + '/api/extension', { headers: { authorization: 'Bearer ' + stored.token }, cache: 'no-store' });
     if (response.status === 401) {
       await chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']);
-      return 'none';
+      cachedAccessState = 'none'; cachedAccessAt = Date.now(); return 'none';
     }
     if (!response.ok) return 'uncertain';
     const data = await response.json();
-    return data.accessState === 'approved' ? 'approved' : data.accessState === 'pending' ? 'pending' : 'none';
+    cachedAccessState = data.accessState === 'approved' ? 'approved' : data.accessState === 'pending' ? 'pending' : 'none';
+    cachedAccessAt = Date.now();
+    return cachedAccessState;
   } catch { return 'uncertain'; }
 }
 
@@ -146,7 +152,6 @@ async function toggle(tab) {
   const currentAccess = await accessState();
   if (panel) await tell(activeTabId, 'quadruzz-suspend');
   else await tell(activeTabId, 'quadruzz-hide');
-  await new Promise((resolve) => setTimeout(resolve, 34));
   await chrome.storage.session.set({ overlayMode: mode, activeTabId });
   await clearNoteNotifications(activeTabId);
   await broadcast(currentAccess === 'approved' ? 'quadruzz-access-approved' : currentAccess === 'pending' ? 'quadruzz-access-pending' : currentAccess === 'uncertain' ? 'quadruzz-access-checking' : 'quadruzz-connect-cancelled');
@@ -216,8 +221,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void chrome.storage.session.get(CONNECT_TAB_KEY).then((stored) => sendResponse({ connecting: Boolean(stored.connectTabId) }));
     return true;
   }
+  if (message?.type === 'quadruzz-access-state') { cachedAccessState = message.state; cachedAccessAt = Date.now(); }
   if (message?.type === 'quadruzz-account-changing') {
-    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => broadcast('quadruzz-connect-cancelled'));
+    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt']).then(() => { cachedAccessState = 'none'; cachedAccessAt = Date.now(); return broadcast('quadruzz-connect-cancelled'); });
   }
   if (message?.type === 'quadruzz-access-requested') void ensureAccessCredential().catch(() => broadcast('quadruzz-access-pending'));
   if (message?.type === 'quadruzz-membership-lost') void applyAccessView(sender.tab?.id, 'none');

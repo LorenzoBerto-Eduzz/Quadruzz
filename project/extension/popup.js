@@ -356,11 +356,12 @@ async function loadMembers(forceRender=false){
     const{token}=await storage.get('token');
     if(!token){if(await connectionPending())connectingView();else signInView();return}
     const response=await api('/api/extension');
-    if(response.status===401){latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}if(await connectionPending())connectingView();else signInView();return}
+    if(response.status===401){try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'none'})}catch{}latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}if(await connectionPending())connectingView();else signInView();return}
     if(!response.ok)throw new Error();
     const data=await response.json();
-    if(data.accessState==='pending'){latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;waitingView();return}
-    if(data.accessState!=='approved'){latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;await storage.remove('token');try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}signInView();return}
+    if(data.accessState==='pending'){try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'pending'})}catch{}latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;waitingView();return}
+    if(data.accessState!=='approved'){try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'none'})}catch{}latestData=null;latestImages=[];pickerOpen=false;noteOpen=false;await storage.remove('token');try{await chrome.runtime.sendMessage({type:'quadruzz-membership-lost'})}catch{}signInView();return}
+    try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'approved'})}catch{}
     await pulseActivity();
     data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));
     const images=await Promise.all(data.members.map(member=>memberImage(member,token)));
