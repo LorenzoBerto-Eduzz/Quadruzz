@@ -6,6 +6,7 @@ import { Check, Plus, Settings, X } from 'lucide-react';
 import type { WorkspacePayload } from '@/lib/workspace-types';
 
 const SYNC_INTERVAL_MS = 1_000;
+const CHROME_STORE_URL = '';
 const decodedProfileImages = new Map<string, HTMLImageElement>();
 const pendingProfileImages = new Map<string, Promise<void>>();
 
@@ -81,6 +82,8 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [extensionUploadBusy, setExtensionUploadBusy] = useState(false);
+  const [extensionUploadMessage, setExtensionUploadMessage] = useState('');
   const requestEpoch = useRef(0);
   const settingsRef = useRef<HTMLDialogElement>(null);
   const gearRef = useRef<HTMLButtonElement>(null);
@@ -127,6 +130,18 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       if (requestEpoch.current === epoch) setData(next);
     } catch (cause) { setError(visibleError(cause, 'Member removal failed. Please try again.')); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
+  }, []);
+
+  const uploadExtension = useCallback(async (file: File) => {
+    setExtensionUploadBusy(true); setExtensionUploadMessage('');
+    try {
+      const form = new FormData(); form.set('extension', file);
+      const response = await fetch('/api/extension-download', { method: 'POST', body: form });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Extension upload failed.');
+      setExtensionUploadMessage('Download ZIP updated.');
+    } catch (cause) { setExtensionUploadMessage(visibleError(cause, 'Extension upload failed.')); }
+    finally { setExtensionUploadBusy(false); }
   }, []);
 
   const finishProfile = useCallback(async (displayName: string, image: File | null, preparedImage?: Promise<LocalProfileImage | null>) => {
@@ -229,6 +244,15 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
 
           <ProfileSettings key={data.currentUser?.displayName || ''} displayName={data.currentUser?.displayName || ''} saveProfile={saveProfile} closeSettings={() => setSettingsOpen(false)} busy={busy} />
           <button className="sign-out" type="button" disabled={busy} onClick={() => void signOut()}>Sign out</button>
+          {data.currentUser?.role === 'host' && (
+            <div className="extension-upload-control">
+              <label className={extensionUploadBusy ? 'disabled' : ''}>
+                <input type="file" accept=".zip,application/zip" disabled={extensionUploadBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadExtension(file); event.currentTarget.value = ''; }} />
+                {extensionUploadBusy ? 'Uploading extension ZIP…' : 'Upload extension ZIP'}
+              </label>
+              {extensionUploadMessage && <span>{extensionUploadMessage}</span>}
+            </div>
+          )}
           <div className="settings-divider" />
           <h3 className="members-title">Members</h3>
 
@@ -272,8 +296,10 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       {!data.extensionEverSeen && !settingsOpen && (
         <aside className="extension-install-prompt" aria-label="Install Extension">
           <strong>Install Extension</strong>
-          <span>Chrome Store page unavailable</span>
-          <a href="/downloads/cross-quadruzz-extension-0.1.0.zip" download>Download extension ZIP</a>
+          {CHROME_STORE_URL
+            ? <a className="chrome-store-install" href={CHROME_STORE_URL}>Install through Chrome Store</a>
+            : <button className="chrome-store-unavailable" type="button" disabled>Chrome Store page unavailable</button>}
+          <a className="extension-zip-download" href="/api/extension-download" download>Download ZIP</a>
         </aside>
       )}
 

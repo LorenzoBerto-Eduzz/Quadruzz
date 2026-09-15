@@ -24,11 +24,14 @@ button, input { font: inherit; }
 .person { width: clamp(3.5rem, 8vw, 5rem); height: clamp(3.5rem, 8vw, 5rem); border-radius: 50%; object-fit: cover; }
 .person-inactive { opacity: .32; filter: grayscale(1) saturate(.15); }
 .gear { position: fixed; left: 1rem; bottom: 1rem; display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: rgba(0,0,0,.08); color: var(--ink); cursor: pointer; }
-.extension-install-prompt { position: fixed; left: 1rem; bottom: 4.25rem; z-index: 9; display: grid; width: min(17rem, calc(100vw - 2rem)); gap: .55rem; padding: .85rem; border-radius: .65rem; background: #fff; color: #111; box-shadow: 0 .8rem 2rem rgba(0,0,0,.2); }
-.extension-install-prompt strong { font-size: .95rem; }
-.extension-install-prompt span { color: #666; font-size: .78rem; }
-.extension-install-prompt a { display: grid; min-height: 2.35rem; place-items: center; border-radius: .45rem; background: #111; color: #fff; font-size: .82rem; text-decoration: none; }
-.extension-install-prompt a:hover { background: #2b2b2b; }
+.extension-install-prompt { position: fixed; left: 1rem; bottom: 4.25rem; z-index: 9; display: grid; width: min(20rem, calc(100vw - 2rem)); gap: .65rem; padding: 1rem; border-radius: .72rem; background: #fff; color: #111; box-shadow: 0 .8rem 2rem rgba(0,0,0,.2); }
+.extension-install-prompt strong { color: #343b45; font-size: 1.05rem; }
+.extension-install-prompt a,.extension-install-prompt button { display: grid; min-height: 2.55rem; place-items: center; border-radius: .48rem; padding: .5rem .7rem; font: 500 .84rem/1.2 inherit; text-align: center; text-decoration: none; }
+.extension-install-prompt .chrome-store-install { background: #2877d4; color: #fff; }
+.extension-install-prompt .chrome-store-install:hover { background: #1f68bf; }
+.extension-install-prompt .chrome-store-unavailable { border: 1px solid #d4d7dc; background: #fff; color: #777d85; cursor: default; }
+.extension-install-prompt .extension-zip-download { background: #3d4652; color: #fff; }
+.extension-install-prompt .extension-zip-download:hover { background: #4a5563; }
 .gear svg { width: 1.1rem; height: 1.1rem; }
 .profile-setup { display: grid; width: min(100%, 22rem); gap: 1.35rem; text-align: left; transform: translateY(-8vh); }
 .profile-setup h1, .signed-out-entry h1 { margin: 0; text-align: center; font-size: 1.35rem; font-weight: 600; }
@@ -81,6 +84,12 @@ button, input { font: inherit; }
 .sign-out { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .4rem .65rem; cursor: pointer; text-decoration: none; }
 .sign-out:hover { background: rgba(255,255,255,.07); }
 .sign-out:disabled { opacity: .5; cursor: default; }
+.extension-upload-control { display: grid; gap: .4rem; }
+.extension-upload-control label { display: grid; min-height: 2.4rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; padding: .45rem .65rem; cursor: pointer; }
+.extension-upload-control label:hover { background: rgba(255,255,255,.07); }
+.extension-upload-control label.disabled { opacity: .5; cursor: default; }
+.extension-upload-control input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.extension-upload-control span { color: var(--muted); font-size: .75rem; text-align: center; }
 .activity-toggle { min-height: 2.25rem; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .4rem .65rem; cursor: pointer; }
 .activity-toggle:hover { background: rgba(255,255,255,.07); }
 .activity-panel { max-height: 11rem; overflow-y: auto; border: 1px solid rgba(255,255,255,.12); border-radius: .5rem; scrollbar-width: none; -ms-overflow-style: none; }
