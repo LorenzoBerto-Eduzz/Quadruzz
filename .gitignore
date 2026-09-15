@@ -53,3 +53,4 @@ pnpm-debug.log*
 exports/
 artifacts/
 *.zip
+!project/public/downloads/*.zip

@@ -24,6 +24,11 @@ button, input { font: inherit; }
 .person { width: clamp(3.5rem, 8vw, 5rem); height: clamp(3.5rem, 8vw, 5rem); border-radius: 50%; object-fit: cover; }
 .person-inactive { opacity: .32; filter: grayscale(1) saturate(.15); }
 .gear { position: fixed; left: 1rem; bottom: 1rem; display: grid; width: 2.5rem; height: 2.5rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; background: rgba(0,0,0,.08); color: var(--ink); cursor: pointer; }
+.extension-install-prompt { position: fixed; left: 1rem; bottom: 4.25rem; z-index: 9; display: grid; width: min(17rem, calc(100vw - 2rem)); gap: .55rem; padding: .85rem; border-radius: .65rem; background: #fff; color: #111; box-shadow: 0 .8rem 2rem rgba(0,0,0,.2); }
+.extension-install-prompt strong { font-size: .95rem; }
+.extension-install-prompt span { color: #666; font-size: .78rem; }
+.extension-install-prompt a { display: grid; min-height: 2.35rem; place-items: center; border-radius: .45rem; background: #111; color: #fff; font-size: .82rem; text-decoration: none; }
+.extension-install-prompt a:hover { background: #2b2b2b; }
 .gear svg { width: 1.1rem; height: 1.1rem; }
 .profile-setup { display: grid; width: min(100%, 22rem); gap: 1.35rem; text-align: left; transform: translateY(-8vh); }
 .profile-setup h1, .signed-out-entry h1 { margin: 0; text-align: center; font-size: 1.35rem; font-weight: 600; }

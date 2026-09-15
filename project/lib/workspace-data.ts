@@ -67,12 +67,13 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   if (!member.display_name || !member.profile_image_key) return { ...base, accessState: 'onboarding', currentUser };
 
   await expireStaleExtensionSessions(now);
+  const extensionHistory = await db.prepare('SELECT 1 AS seen FROM extension_credentials WHERE user_id=? LIMIT 1').bind(user.userId).first<{ seen: number }>();
   const rows = (await db.prepare("SELECT m.user_id,m.email,m.role,m.status,m.join_order,m.display_name,m.profile_image_key,m.last_seen_at,m.updated_at,EXISTS(SELECT 1 FROM extension_sessions e WHERE e.user_id=m.user_id AND e.last_seen_at>=?) AS extension_active FROM members m WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL ORDER BY extension_active DESC,m.join_order ASC").bind(now - EXTENSION_ACTIVE_AFTER_MS).all<MemberRow>()).results;
   const members: PublicMember[] = rows.map((row) => ({ userId: row.user_id, displayName: row.display_name!, joinOrder: row.join_order, extensionActive: row.extension_active === 1, imageUrl: `/api/profile-image?user=${encodeURIComponent(row.user_id)}&v=${row.updated_at}`, canRemove: member.role === 'host' && row.role !== 'host' && row.user_id !== member.user_id }));
   const requests = (await db.prepare("SELECT user_id AS userId,email,requested_at AS requestedAt FROM access_requests WHERE status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>? ORDER BY requested_at ASC").bind(now).all<PendingRequest>()).results;
   const board = await db.prepare("SELECT value FROM board_state WHERE key='title'").first<{value: string}>();
   const activity = await listActivity();
-  return { accessState: 'approved', currentUser, members, requests, activity, boardTitle: board?.value || 'Cross-Quadruzz' };
+  return { accessState: 'approved', currentUser, members, requests, activity, boardTitle: board?.value || 'Cross-Quadruzz', extensionEverSeen: Boolean(extensionHistory) };
 }
 
 export async function requireApproved(userId: string): Promise<MemberRow> {

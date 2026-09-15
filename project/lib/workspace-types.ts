@@ -21,4 +21,5 @@ export type WorkspacePayload = {
   activity: ActivityEntry[];
   boardTitle: string;
   hostConfigurationRequired?: boolean;
+  extensionEverSeen?: boolean;
 };

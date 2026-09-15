@@ -269,6 +269,14 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
         </dialog>
       )}
 
+      {!data.extensionEverSeen && !settingsOpen && (
+        <aside className="extension-install-prompt" aria-label="Install Extension">
+          <strong>Install Extension</strong>
+          <span>Chrome Store page unavailable</span>
+          <a href="/downloads/cross-quadruzz-extension-0.1.0.zip" download>Download extension ZIP</a>
+        </aside>
+      )}
+
       <button ref={gearRef} className="gear" type="button" aria-label="Settings" title="Settings" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
         <Settings aria-hidden="true" />
         {data.requests.length > 0 && <span className="gear-dot" aria-label={`${data.requests.length} pending request${data.requests.length === 1 ? '' : 's'}`} />}
