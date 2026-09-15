@@ -82,7 +82,7 @@ function flagFreshNote(userId){
     animatedFreshNoteUsers.delete(userId);
     freshNoteTimers.delete(userId);
     document.querySelectorAll('.note-fresh').forEach(element=>{if(element.dataset.noteUser===userId){element.classList.remove('note-fresh');element.removeAttribute('data-note-fresh')}});
-  },1700));
+  },1800));
 }
 function startFreshNoteAnimations(){
   document.querySelectorAll('[data-note-fresh="true"]').forEach(element=>{
@@ -499,7 +499,7 @@ async function loadMembers(forceRender=false){
     void resolvedImages.then(nextImages=>{if(sequence<appliedLoadSequence)return;const changed=nextImages.some((image,index)=>image!==latestImages[index]);if(!changed)return;latestImages=nextImages;updateMemberImages(nextImages)}).catch(()=>{});
   }catch(error){if(stopInvalidContext(error))return;reportReady()}
 }
-async function hydrateActionPopup(){if(!actionPopup)return;const stored=await chrome.storage.session.get('cachedMemberSnapshot');const data=stored.cachedMemberSnapshot;if(data?.accessState!=='approved'||!Array.isArray(data.members))return;data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));const cached=await storedImageCache();await markFreshNotes(data);latestData=data;latestImages=data.members.map(member=>cached[`${member.userId}:${member.imageVersion}`]||'');renderMembers()}
+async function hydrateActionPopup(){if(!actionPopup)return;const stored=await chrome.storage.session.get('cachedMemberSnapshot');const data=stored.cachedMemberSnapshot;if(data?.accessState!=='approved'||!Array.isArray(data.members))return;data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));const cached=await storedImageCache();if(actionMode!=='notification')await markFreshNotes(data);latestData=data;latestImages=data.members.map(member=>cached[`${member.userId}:${member.imageVersion}`]||'');renderMembers()}
 function scheduleRefresh(delay=overlayVisible||actionPopup?250:5000){
   if(stopped)return;
   if(refreshTimer)clearTimeout(refreshTimer);
