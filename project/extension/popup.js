@@ -63,9 +63,9 @@ function focusOverlayInput(){
 function notificationKey(notification){return `${notification.userId}:${notification.noteUpdatedAt}`}
 function clearNotifications(render=true){notifications=[];for(const timer of notificationTimers.values())clearTimeout(timer);notificationTimers.clear();document.querySelector('.note-notifications')?.remove();if(render&&latestData)renderMembers()}
 function removeNotification(key){notifications=notifications.filter(item=>notificationKey(item)!==key);const timer=notificationTimers.get(key);if(timer)clearTimeout(timer);notificationTimers.delete(key);if(!notifications.length&&!pickerOpen&&!noteOpen&&standaloneNotification){if(actionPopup)window.close();else hideOverlayNow();return}if(latestData)renderMembers()}
-function addNotification(notification){if(!notification?.note||notification.userId===latestData?.currentUserId)return;const key=notificationKey(notification);notifications=notifications.filter(item=>notificationKey(item)!==key);notifications.unshift(notification);const previous=notificationTimers.get(key);if(previous)clearTimeout(previous);notificationTimers.set(key,setTimeout(()=>removeNotification(key),5000));if(latestData)renderMembers()}
+function addNotification(notification){if(!notification?.note||notification.userId===latestData?.currentUserId)return;const remaining=Math.min(5000,Number(notification.expiresAt||Date.now()+5000)-Date.now());if(remaining<=0)return;const key=notificationKey(notification);notifications=notifications.filter(item=>notificationKey(item)!==key);notifications.unshift(notification);const previous=notificationTimers.get(key);if(previous)clearTimeout(previous);notificationTimers.set(key,setTimeout(()=>removeNotification(key),remaining));if(latestData)renderMembers()}
 function notificationMarkup(){if(!notifications.length)return'';return `<div class="note-notifications">${notifications.map(notification=>{const twoLines=noteUsesTwoLines(notification.note);return `<div class="note-notification${twoLines?' two-lines':''}"><div class="notification-identity"><span class="notification-name">${esc(notification.displayName)}</span><span class="notification-role">${esc(notification.actingState||'-')}</span></div><div class="notification-note">${esc(notification.note)}</div></div>`}).join('')}</div>`}
-function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?42:32),0)+(notifications.length-1)*2}
+function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?46:34),0)+(notifications.length-1)*2}
 async function loadDisplayedNoteVersions(){
   if(displayedNoteVersions)return displayedNoteVersions;
   if(!displayedNoteVersionsPromise)displayedNoteVersionsPromise=chrome.storage.session.get(DISPLAYED_NOTES_KEY).then(stored=>stored[DISPLAYED_NOTES_KEY]||{}).catch(()=>({}));
@@ -202,17 +202,17 @@ let lastActionPopupHeight=0;
 function reportSize(){const height=measuredHeight();if(actionPopup){const nextHeight=Math.min(545,Math.max(25,height));if(nextHeight!==lastActionPopupHeight){lastActionPopupHeight=nextHeight;document.documentElement.style.height=nextHeight+'px'}return}window.parent.postMessage({type:'quadruzz-resize',height},'*')}
 function scheduleSizeReport(){if(sizeReportFrame)return;sizeReportFrame=requestAnimationFrame(()=>{sizeReportFrame=0;reportSize()})}
 function reportReady(){const height=measuredHeight();if(actionPopup){reportSize();if(!actionPopupRevealed){actionPopupRevealed=true;requestAnimationFrame(()=>{document.documentElement.classList.remove('action-popup-pending');requestAnimationFrame(()=>{startFreshNoteAnimations();if(actionMode==='role'||actionMode==='note')focusOverlayInput()})})}else requestAnimationFrame(startFreshNoteAnimations);return}window.parent.postMessage({type:'quadruzz-picker-visibility',visible:pickerOpen||noteOpen},'*');window.parent.postMessage({type:'quadruzz-ready',presentationId,height},'*')}
-async function api(path,options={}){const{token}=await storage.get('token');const headers={...options.headers,...(token&&{authorization:`Bearer ${token}`})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove('token');return response}
-async function pulseActivity(){try{const stored=await storage.get(['token','extensionActivitySessionId','extensionActivityPulseAt']);if(!stored.token)return;const now=Date.now();if(now-(stored.extensionActivityPulseAt||0)<15000)return;const extensionSessionId=stored.extensionActivitySessionId||crypto.randomUUID();await storage.set({extensionActivitySessionId,extensionActivityPulseAt:now});const response=await fetch(`${BASE}/api/extension`,{method:'POST',headers:{authorization:`Bearer ${stored.token}`,'content-type':'application/json'},body:JSON.stringify({extensionAction:'heartbeat',extensionSessionId})});if(response.status===401)await storage.remove(['token','extensionActivityPulseAt']);else if(!response.ok)await storage.remove('extensionActivityPulseAt')}catch(error){if(!stopInvalidContext(error))try{await storage.remove('extensionActivityPulseAt')}catch{/* The next member refresh retries. */}}}
+async function api(path,options={}){const{token}=await storage.get('token');const headers={...options.headers,...(token&&{authorization:`Bearer ${token}`})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove(['token','profileImageCache']);return response}
+async function pulseActivity(){try{const stored=await storage.get(['token','extensionActivitySessionId','extensionActivityPulseAt']);if(!stored.token)return;const now=Date.now();if(now-(stored.extensionActivityPulseAt||0)<15000)return;const extensionSessionId=stored.extensionActivitySessionId||crypto.randomUUID();await storage.set({extensionActivitySessionId,extensionActivityPulseAt:now});const response=await fetch(`${BASE}/api/extension`,{method:'POST',headers:{authorization:`Bearer ${stored.token}`,'content-type':'application/json'},body:JSON.stringify({extensionAction:'heartbeat',extensionSessionId})});if(response.status===401)await storage.remove(['token','extensionActivityPulseAt','profileImageCache']);else if(!response.ok)await storage.remove('extensionActivityPulseAt')}catch(error){if(!stopInvalidContext(error))try{await storage.remove('extensionActivityPulseAt')}catch{/* The next member refresh retries. */}}}
 function requireFullPopup(){if(standaloneRole||standaloneNote)window.parent.postMessage({type:'quadruzz-require-popup'},'*')}
 function connectingView(){requireFullPopup();if(!document.querySelector('#connect-progress'))app.innerHTML='<div class="connect"><button class="primary" id="connect-progress" disabled>Connecting to Cross…</button></div>';reportReady()}
 function waitingView(){requireFullPopup();if(!document.querySelector('#open-hq')){app.innerHTML='<div class="connect"><button class="primary" id="open-hq">Waiting for approval</button></div>';document.querySelector('#open-hq').addEventListener('click',()=>chrome.runtime.sendMessage({type:'quadruzz-open-hq'}))}reportReady()}
 function signInView(){if(connectInProgress){connectingView();return}requireFullPopup();if(!document.querySelector('#sign-in')){app.innerHTML='<div class="connect"><button class="primary" id="sign-in">Connect to Cross</button></div>';document.querySelector('#sign-in').addEventListener('click',signIn)}reportReady()}
 async function signIn(){if(connectInProgress)return;connectInProgress=true;connectingView();try{const result=await chrome.runtime.sendMessage({type:'quadruzz-connect'});if(!result?.ok)throw new Error('Connection tab did not open')}catch{connectInProgress=false;signInView()}}
 async function connectionPending(){try{return Boolean((await chrome.runtime.sendMessage({type:'quadruzz-connect-state'}))?.connecting)}catch{return false}}
-async function storedImageCache(){if(!storedImageCachePromise)storedImageCachePromise=chrome.storage.session.get('profileImageCache').then(result=>result.profileImageCache||{});return storedImageCachePromise}
+async function storedImageCache(){if(!storedImageCachePromise)storedImageCachePromise=storage.get('profileImageCache').then(result=>result.profileImageCache||{});return storedImageCachePromise}
 function blobDataUrl(blob){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.addEventListener('load',()=>resolve(typeof reader.result==='string'?reader.result:''),{once:true});reader.addEventListener('error',()=>reject(reader.error),{once:true});reader.readAsDataURL(blob)})}
-async function memberImage(member,token){const key=`${member.userId}:${member.imageVersion}`;if(imageUrls.has(key))return imageUrls.get(key);if(imageLoads.has(key))return imageLoads.get(key);const load=(async()=>{const cached=await storedImageCache();if(cached[key]){imageUrls.set(key,cached[key]);return cached[key]}const response=await fetch(`${BASE}/api/extension/profile-image?user=${encodeURIComponent(member.userId)}&v=${member.imageVersion}`,{headers:{authorization:`Bearer ${token}`}});if(!response.ok)return'';const url=await blobDataUrl(await response.blob());for(const existing of Object.keys(cached))if(existing.startsWith(member.userId+':')&&existing!==key)delete cached[existing];cached[key]=url;while(Object.keys(cached).length>30)delete cached[Object.keys(cached)[0]];imageUrls.set(key,url);try{await chrome.storage.session.set({profileImageCache:cached})}catch{/* The in-memory image remains usable if the session cache is full. */}return url})();imageLoads.set(key,load);try{return await load}finally{imageLoads.delete(key)}}
+async function memberImage(member,token){const key=`${member.userId}:${member.imageVersion}`;if(imageUrls.has(key))return imageUrls.get(key);if(imageLoads.has(key))return imageLoads.get(key);const load=(async()=>{const cached=await storedImageCache();if(cached[key]){imageUrls.set(key,cached[key]);return cached[key]}const response=await fetch(`${BASE}/api/extension/profile-image?user=${encodeURIComponent(member.userId)}&v=${member.imageVersion}`,{headers:{authorization:`Bearer ${token}`}});if(!response.ok)return'';const url=await blobDataUrl(await response.blob());for(const existing of Object.keys(cached))if(existing.startsWith(member.userId+':')&&existing!==key)delete cached[existing];cached[key]=url;while(Object.keys(cached).length>30)delete cached[Object.keys(cached)[0]];imageUrls.set(key,url);try{await storage.set({profileImageCache:cached})}catch{/* The in-memory image remains usable if storage is temporarily unavailable. */}return url})();imageLoads.set(key,load);try{return await load}finally{imageLoads.delete(key)}}
 function formatNoteTime(value){const date=new Date(Number(value));if(Number.isNaN(date.getTime()))return'';const now=new Date();const pad=number=>String(number).padStart(2,'0');return date.toDateString()===now.toDateString()?pad(date.getHours())+':'+pad(date.getMinutes()):pad(date.getMonth()+1)+'/'+pad(date.getDate())}
 const noteMeasureContext=document.createElement('canvas').getContext('2d');
 function noteUsesTwoLines(value){
@@ -263,9 +263,8 @@ function bindRolePicker(){
   input.addEventListener('keydown',event=>{
     if(event.key==='Enter'){
       event.preventDefault();
-      if(!input.value.trim())return;
       if(selectedRoleIndex>=0)void chooseRole(matchingRoles()[selectedRoleIndex],false);
-      else void chooseRole(input.value,true);
+      else if(input.value.trim())void chooseRole(input.value,true);
       return;
     }
     if(event.key==='Escape'){event.preventDefault();closeRolePicker();return}
@@ -414,7 +413,7 @@ function renderMembers(){
   if(pickerOpen&&roleTrigger){
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'))+2;
+    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'));
     picker.style.top=`${top}px`;
     picker.style.left=standaloneRole?'0':'48px';
     picker.style.width=standaloneRole?'100%':'193px';
@@ -423,7 +422,7 @@ function renderMembers(){
   }else if(noteOpen&&noteTrigger){
     document.body.insertAdjacentHTML('beforeend',noteEditorMarkup());
     const editor=document.querySelector('.note-editor');
-    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'))+2;
+    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'));
     editor.style.top=`${top}px`;
     editor.style.left=standaloneNote?'0':'48px';
     editor.style.width=standaloneNote?'100%':'193px';
@@ -521,9 +520,10 @@ new ResizeObserver(scheduleSizeReport).observe(document.body);
 try{const started=chrome.runtime.sendMessage({type:'quadruzz-authenticated'});if(started?.catch)started.catch(()=>{})}catch{/* The background alarm will retry. */}
 void (async()=>{
   if(actionPopup&&actionMode==='notification'){
-    const stored=await chrome.storage.session.get('actionPopupNotification');
-    await chrome.storage.session.remove('actionPopupNotification');
-    if(stored.actionPopupNotification)addNotification(stored.actionPopupNotification);
+    const stored=await chrome.storage.session.get(['actionPopupNotification','activeNoteNotifications']);
+    const active=Array.isArray(stored.activeNoteNotifications)?stored.activeNoteNotifications:[];
+    for(const notification of active)addNotification(notification);
+    if(!active.length&&stored.actionPopupNotification)addNotification(stored.actionPopupNotification);
   }
   await hydrateActionPopup();
   await loadMembers(false);

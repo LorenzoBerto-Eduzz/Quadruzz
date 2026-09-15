@@ -39,16 +39,25 @@ export function pendingRequestExpiresAt(now: number): number { return now + REQU
 
 export async function ensureConfiguredHost(user: ChatGPTUser): Promise<void> {
   const hostId = configuredHostUserId();
-  if (!hostId || hostId !== user.userId) return;
+  if (!hostId) return;
   const db = getDb();
   await finishPendingTestReset();
-  const existing = await db.prepare('SELECT email,role,status FROM members WHERE user_id=?').bind(user.userId).first<{email: string; role: Role; status: string}>();
-  if (existing?.email === user.email && existing.role === 'host' && existing.status === 'approved') return;
+  const existing = await db.prepare('SELECT email,role,status,join_order,display_name,profile_image_key FROM members WHERE user_id=?').bind(hostId).first<{email: string; role: Role; status: string; join_order: number; display_name: string | null; profile_image_key: string | null}>();
+  const pending = await db.prepare("SELECT email,display_name,profile_image_key FROM access_requests WHERE user_id=? AND status='pending'").bind(hostId).first<{email: string; display_name: string | null; profile_image_key: string | null}>();
+  const email = existing?.email || pending?.email || (hostId === user.userId ? user.email : null);
+  if (!email) return;
+  const otherHost = await db.prepare("SELECT 1 AS found FROM members WHERE role='host' AND user_id!=? LIMIT 1").bind(hostId).first<{ found: number }>();
+  if (existing?.email === email && existing.role === 'host' && existing.status === 'approved' && !otherHost && !pending) return;
   const now = Date.now();
-  await db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,acting_state,last_seen_at,created_at,updated_at)
-    VALUES (?,?,'host','approved',1,NULL,NULL,'',?, ?, ?)
-    ON CONFLICT(user_id) DO UPDATE SET email=excluded.email, role='host', status='approved', updated_at=excluded.updated_at`)
-    .bind(user.userId, user.email, now, now, now).run();
+  const next = existing ? existing.join_order : (await db.prepare('SELECT COALESCE(MAX(join_order),0)+1 AS value FROM members').first<{ value: number }>())?.value || 1;
+  await db.batch([
+    db.prepare("UPDATE members SET role='member',updated_at=? WHERE role='host' AND user_id!=?").bind(now, hostId),
+    db.prepare(`INSERT INTO members (user_id,email,role,status,join_order,display_name,profile_image_key,acting_state,last_seen_at,created_at,updated_at)
+      VALUES (?,?,'host','approved',?,?,?,'',NULL,?,?)
+      ON CONFLICT(user_id) DO UPDATE SET email=excluded.email,role='host',status='approved',display_name=COALESCE(members.display_name,excluded.display_name),profile_image_key=COALESCE(members.profile_image_key,excluded.profile_image_key),updated_at=excluded.updated_at`)
+      .bind(hostId, email, next, existing?.display_name || pending?.display_name || null, existing?.profile_image_key || pending?.profile_image_key || null, now, now),
+    db.prepare('DELETE FROM access_requests WHERE user_id=?').bind(hostId),
+  ]);
 }
 
 export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspacePayload> {
