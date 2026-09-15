@@ -115,6 +115,7 @@ function receiveVisibleMemberNote(notification){
   void loadMembers(false);
 }
 document.querySelector('#close').addEventListener('click',()=>{if(actionPopup){window.close();return}try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
+document.querySelector('#open-hq-home').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-open-hq'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{
   const popupToggle=event.code==='KeyQ'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;
   const retiredPopupToggle=event.code==='KeyW'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;
