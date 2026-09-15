@@ -28,7 +28,7 @@ The agreed initial product direction is:
 - heartbeat-based presence expiry; and
 - future shared state backed by Sites storage.
 
-The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+Q toggles the member popup; Alt+Shift+D toggles the shared acting-status picker; Alt+Shift+S toggles the shared-note editor. Hidden mode receives five-second stacked notifications for new notes from other members. Version `0.1.0` has been submitted for Chrome Web Store review while local development continues.
+The local unpacked Companion is implemented in `project/extension/`. It securely authorizes through the authenticated website and stable OpenAI user ID, reuses server-enforced permissions/live data, and appears as a persistent floating overlay on the focused tab. The toolbar icon or Alt+Shift+Q toggles the member popup; Alt+Shift+D toggles the shared acting-status picker; Alt+Shift+S toggles the shared-note editor. Hidden mode receives five-second stacked notifications for new notes from other members. Version `0.1.0` was submitted for Chrome Web Store review; current local and colleague-test development is version `0.1.1`.
 
 ## Run And Test Commands
 

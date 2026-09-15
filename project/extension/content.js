@@ -13,7 +13,7 @@ function styleFrame(frame, mode) {
   frame.style.right = roleOnly || noteOnly || notificationOnly ? '79px' : '72px';
   frame.style.borderRadius = roleOnly || noteOnly || notificationOnly ? '2px' : '9px';
   frame.style.boxShadow = 'none';
-  frame.style.zoom = '1.1';
+  frame.style.zoom = '1.2';
   frame.style.transform = 'none';
 }
 
@@ -26,7 +26,7 @@ function ensureFrame() {
     frame.id = FRAME_ID;
     frame.src = chrome.runtime.getURL('popup.html');
     frame.title = 'Cross-Quadruzz';
-    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '248px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', zoom: '1.1', transform: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'block' });
+    Object.assign(frame.style, { position: 'fixed', top: '3px', right: '72px', width: '248px', height: '96px', maxHeight: 'calc(100vh - 6px)', border: '0', borderRadius: '9px', zIndex: '2147483647', boxShadow: 'none', zoom: '1.2', transform: 'none', colorScheme: 'dark', visibility: 'hidden', opacity: '0', pointerEvents: 'none', transition: 'none', display: 'block' });
     (document.body || document.documentElement).append(frame);
     window.addEventListener('message', (event) => {
       if (event.source !== frame.contentWindow) return;
