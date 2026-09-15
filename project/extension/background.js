@@ -186,6 +186,7 @@ async function openConnectionTab() {
     if (stored.connectTabId) {
       try {
         const existing = await chrome.tabs.get(stored.connectTabId);
+        if (existing.url && await completeConnection(existing.id, existing.url)) return;
         await chrome.tabs.update(existing.id, { active: true });
         if (existing.windowId) await chrome.windows.update(existing.windowId, { focused: true });
         await broadcast('quadruzz-connect-started');
@@ -193,7 +194,11 @@ async function openConnectionTab() {
       } catch { await chrome.storage.session.remove(CONNECT_TAB_KEY); }
     }
     const tab = await chrome.tabs.create({ url: connectionAuthorizationUrl(), active: true });
-    if (tab.id) await chrome.storage.session.set({ connectTabId: tab.id });
+    if (tab.id) {
+      await chrome.storage.session.set({ connectTabId: tab.id });
+      const current = await chrome.tabs.get(tab.id).catch(() => null);
+      if (current?.url && await completeConnection(tab.id, current.url)) return;
+    }
     await broadcast('quadruzz-connect-started');
   })();
   try { await connectionOpening; } finally { connectionOpening = null; }
@@ -205,6 +210,7 @@ async function completeConnection(tabId, url) {
   await chrome.storage.session.remove(CONNECT_TAB_KEY);
   if (token) {
     await chrome.storage.local.set({ token });
+    await rememberAccess('approved');
     await startActivityHeartbeat();
   }
   try { await chrome.tabs.remove(tabId); } catch { /* The connection tab may already be closing. */ }
