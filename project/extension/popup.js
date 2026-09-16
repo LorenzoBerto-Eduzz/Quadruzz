@@ -65,7 +65,7 @@ function clearNotifications(render=true){notifications=[];for(const timer of not
 function removeNotification(key){notifications=notifications.filter(item=>notificationKey(item)!==key);const timer=notificationTimers.get(key);if(timer)clearTimeout(timer);notificationTimers.delete(key);if(!notifications.length&&!pickerOpen&&!noteOpen&&standaloneNotification){if(actionPopup)window.close();else hideOverlayNow();return}if(latestData)renderMembers()}
 function addNotification(notification){if(!notification?.note||notification.userId===latestData?.currentUserId)return;const remaining=Math.min(5000,Number(notification.expiresAt||Date.now()+5000)-Date.now());if(remaining<=0)return;const key=notificationKey(notification);notifications=notifications.filter(item=>notificationKey(item)!==key);notifications.unshift(notification);const previous=notificationTimers.get(key);if(previous)clearTimeout(previous);notificationTimers.set(key,setTimeout(()=>removeNotification(key),remaining));if(latestData)renderMembers()}
 function notificationMarkup(){if(!notifications.length)return'';return `<div class="note-notifications">${notifications.map(notification=>{const twoLines=noteUsesTwoLines(notification.note);return `<div class="note-notification${twoLines?' two-lines':''}"><div class="notification-identity"><span class="notification-name">${esc(notification.displayName)}</span><span class="notification-role">${esc(notification.actingState||'-')}</span></div><div class="notification-note">${esc(notification.note)}</div></div>`}).join('')}</div>`}
-function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?46:34),0)+(notifications.length-1)*2}
+function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?50:36),0)+(notifications.length-1)*2}
 async function loadDisplayedNoteVersions(){
   if(displayedNoteVersions)return displayedNoteVersions;
   if(!displayedNoteVersionsPromise)displayedNoteVersionsPromise=chrome.storage.session.get(DISPLAYED_NOTES_KEY).then(stored=>stored[DISPLAYED_NOTES_KEY]||{}).catch(()=>({}));
@@ -294,12 +294,20 @@ function bindRolePicker(){
 function noteEditorMarkup(){return `<div class="note-editor"><textarea id="note-input" rows="2" aria-label="Set note" placeholder="Enviar comunicado..." spellcheck="true">${esc(noteDraft)}</textarea></div>`}
 function sizeNoteEditor(input){
   const editor=input.closest('.note-editor');
-  input.style.height='18px';
+  input.style.height='20px';
   const required=input.scrollHeight;
-  if(required>28)return false;
-  const height=required>18?28:18;
+  if(required>34)return false;
+  const height=required>20?34:20;
   input.style.height=height+'px';
   editor.style.height=height+'px';
+  if(!standaloneNote&&noteMeasureContext){
+    noteMeasureContext.font='500 10px system-ui';
+    const measuredText=input.value||input.placeholder||'';
+    const contentWidth=Math.max(...measuredText.split('\n').map(line=>noteMeasureContext.measureText(line||' ').width));
+    const maxWidth=Math.max(24,document.documentElement.clientWidth-41);
+    editor.style.right='auto';
+    editor.style.width=Math.min(maxWidth,Math.max(24,Math.ceil(contentWidth)+8))+'px';
+  }
   const top=Number(editor.dataset.top||0);
   pickerDesiredHeight=top+height;
   reportSize();
@@ -413,7 +421,7 @@ function renderMembers(){
   if(pickerOpen&&roleTrigger){
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'))-2;
+    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'))-5;
     picker.style.top=`${top}px`;
     picker.style.left=standaloneRole?'0':'41px';
     picker.style.right=standaloneRole?'auto':'0';
@@ -423,7 +431,7 @@ function renderMembers(){
   }else if(noteOpen&&noteTrigger){
     document.body.insertAdjacentHTML('beforeend',noteEditorMarkup());
     const editor=document.querySelector('.note-editor');
-    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'))-2;
+    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'))-5;
     editor.style.top=`${top}px`;
     editor.style.left=standaloneNote?'0':'41px';
     editor.style.right=standaloneNote?'auto':'0';
