@@ -10,6 +10,9 @@ export function OPTIONS() { return new Response(null, { status: 204, headers: co
 function validPresenceSessionId(value: string | null | undefined): value is string {
   return typeof value === 'string' && /^[a-zA-Z0-9-]{16,80}$/.test(value);
 }
+function validExtensionVersion(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 64 && /^[0-9A-Za-z][0-9A-Za-z.+_-]*$/.test(value);
+}
 function normalizeRoleStatus(value: unknown): { key: string; label: string } | null {
   if (typeof value !== 'string') return null;
   const label = value.trim().replace(/\s+/g, ' ');
@@ -49,11 +52,12 @@ export async function POST(request: Request) {
     if (!userId) return reply({ error: 'Extension authorization required.' }, 401);
     const member = await getDb().prepare("SELECT display_name,acting_state FROM members WHERE user_id=? AND status='approved'").bind(userId).first<{ display_name: string | null; acting_state: string }>();
     if (!member) return reply({ error: 'Approved membership required.' }, 403);
-    const body = await request.json() as { actingState?: string; createActingState?: boolean; note?: string | null; extensionAction?: 'heartbeat'; extensionSessionId?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
+    const body = await request.json() as { actingState?: string; createActingState?: boolean; note?: string | null; extensionAction?: 'heartbeat'; extensionSessionId?: string; extensionVersion?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
     if (body.extensionAction === 'heartbeat') {
       const sessionId = body.extensionSessionId?.trim();
       if (!validPresenceSessionId(sessionId)) return reply({ error: 'Invalid extension session.' }, 400);
-      await getDb().prepare('INSERT INTO extension_sessions (session_id,user_id,last_seen_at) VALUES (?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at').bind(sessionId, userId, Date.now()).run();
+      const extensionVersion = validExtensionVersion(body.extensionVersion) ? body.extensionVersion : null;
+      await getDb().prepare('INSERT INTO extension_sessions (session_id,user_id,last_seen_at,extension_version) VALUES (?,?,?,?) ON CONFLICT(session_id) DO UPDATE SET user_id=excluded.user_id,last_seen_at=excluded.last_seen_at,extension_version=COALESCE(excluded.extension_version,extension_sessions.extension_version)').bind(sessionId, userId, Date.now(), extensionVersion).run();
       if (!body.presenceAction) return reply({ ok: true });
     }
     if (body.presenceAction) {

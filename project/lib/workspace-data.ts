@@ -66,7 +66,7 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   await cleanupExpiredRequests(now);
   const db = getDb();
   const member = await db.prepare('SELECT * FROM members WHERE user_id = ?').bind(user.userId).first<MemberRow>();
-  const base = { currentUser: { userId: user.userId, email: user.email }, members: [], requests: [], activity: [], noteLog: [], roleLog: [], roleStatuses: [], boardTitle: 'Cross-Quadruzz' };
+  const base = { currentUser: { userId: user.userId, email: user.email }, members: [], requests: [], activity: [], noteLog: [], roleLog: [], roleStatuses: [], boardTitle: 'Cross-Quadruzz', installedExtensionVersion: null, availableExtensionVersion: '0.1.0' };
   if (!member || member.status !== 'approved') {
     const request = await db.prepare("SELECT status,display_name,profile_image_key,expires_at FROM access_requests WHERE user_id=? AND status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>?").bind(user.userId, now).first<RequestRow>();
     if (request) return { ...base, accessState: 'pending', currentUser: { ...base.currentUser, displayName: request.display_name, imageUrl: `/api/profile-image?pending=1&v=${request.expires_at || now}`, pendingImageReceived: Boolean(request.profile_image_key) }, hostConfigurationRequired: !configuredHostUserId() };
@@ -77,15 +77,17 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
 
   await expireStaleExtensionSessions(now);
   const extensionHistory = await db.prepare('SELECT 1 AS seen FROM extension_credentials WHERE user_id=? LIMIT 1').bind(user.userId).first<{ seen: number }>();
+  const installedExtension = await db.prepare('SELECT extension_version AS version FROM extension_sessions WHERE user_id=? AND extension_version IS NOT NULL AND last_seen_at>=? ORDER BY last_seen_at DESC LIMIT 1').bind(user.userId, now - EXTENSION_ACTIVE_AFTER_MS).first<{ version: string }>();
   const rows = (await db.prepare("SELECT m.user_id,m.email,m.role,m.status,m.join_order,m.display_name,m.profile_image_key,m.last_seen_at,m.updated_at,EXISTS(SELECT 1 FROM extension_sessions e WHERE e.user_id=m.user_id AND e.last_seen_at>=?) AS extension_active FROM members m WHERE m.status='approved' AND m.display_name IS NOT NULL AND m.profile_image_key IS NOT NULL ORDER BY extension_active DESC,m.join_order ASC").bind(now - EXTENSION_ACTIVE_AFTER_MS).all<MemberRow>()).results;
   const members: PublicMember[] = rows.map((row) => ({ userId: row.user_id, displayName: row.display_name!, joinOrder: row.join_order, extensionActive: row.extension_active === 1, imageUrl: `/api/profile-image?user=${encodeURIComponent(row.user_id)}&v=${row.updated_at}`, canRemove: member.role === 'host' && row.role !== 'host' && row.user_id !== member.user_id }));
   const requests = (await db.prepare("SELECT user_id AS userId,email,requested_at AS requestedAt FROM access_requests WHERE status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>? ORDER BY requested_at ASC").bind(now).all<PendingRequest>()).results;
   const board = await db.prepare("SELECT value FROM board_state WHERE key='title'").first<{value: string}>();
+  const availableExtension = await db.prepare("SELECT value FROM board_state WHERE key='extension_zip_version'").first<{value: string}>();
   const activity = await listActivity();
   const noteLog = (await db.prepare('SELECT id,display_name AS displayName,note,created_at AS createdAt FROM note_log ORDER BY created_at DESC,id DESC LIMIT 100').all<NoteLogEntry>()).results;
   const roleLog = (await db.prepare('SELECT id,display_name AS displayName,old_role AS oldRole,new_role AS newRole,created_at AS createdAt FROM role_log ORDER BY created_at DESC,id DESC LIMIT 100').all<RoleLogEntry>()).results;
   const roleStatuses = (await db.prepare('SELECT label FROM role_statuses ORDER BY label COLLATE NOCASE, key').all<{ label: string }>()).results.map((row) => row.label);
-  return { accessState: 'approved', currentUser, members, requests, activity, noteLog, roleLog, roleStatuses, boardTitle: board?.value || 'Cross-Quadruzz', extensionEverSeen: Boolean(extensionHistory) };
+  return { accessState: 'approved', currentUser, members, requests, activity, noteLog, roleLog, roleStatuses, boardTitle: board?.value || 'Cross-Quadruzz', extensionEverSeen: Boolean(extensionHistory), installedExtensionVersion: installedExtension?.version || null, availableExtensionVersion: availableExtension?.value || '0.1.0' };
 }
 
 export async function requireApproved(userId: string): Promise<MemberRow> {

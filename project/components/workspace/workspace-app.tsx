@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, Plus, Settings, X } from 'lucide-react';
-import type { WorkspacePayload } from '@/lib/workspace-types';
+import type { PublicMember, WorkspacePayload } from '@/lib/workspace-types';
 
 const SYNC_INTERVAL_MS = 1_000;
 const CHROME_STORE_URL = '';
@@ -72,6 +72,35 @@ function ProfileImage({ src, className, title }: { src: string; className?: stri
   return <img className={className} src={src} alt="" title={title} decoding="sync" loading="eager" />;
 }
 
+function EditableMemberRow({ member, busy, saveName, saveImage }: { member: PublicMember; busy: boolean; saveName: (name: string) => Promise<boolean>; saveImage: (name: string, image: File) => Promise<boolean> }) {
+  const [name, setName] = useState(member.displayName);
+  const [saving, setSaving] = useState(false);
+  const cancelEdit = useRef(false);
+
+  async function commitName() {
+    if (cancelEdit.current) { cancelEdit.current = false; setName(member.displayName); return; }
+    const next = name.trim();
+    if (!next || next === member.displayName) { setName(member.displayName); return; }
+    setName(next); setSaving(true);
+    const saved = await saveName(next);
+    if (!saved) setName(member.displayName);
+    setSaving(false);
+  }
+
+  return (
+    <li className="current-member">
+      <label className="member-image-editor" aria-label="Choose a new profile image" title="Change profile image">
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" disabled={busy || saving} onChange={(event) => { const file = event.target.files?.[0]; if (file) void saveImage(name.trim() || member.displayName, file); event.currentTarget.value = ''; }} />
+        <ProfileImage src={member.imageUrl} />
+      </label>
+      <input className="member-name-editor" aria-label="Your display name" value={name} maxLength={48} disabled={busy || saving} onChange={(event) => setName(event.target.value)} onBlur={() => void commitName()} onKeyDown={(event) => {
+        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
+        if (event.key === 'Escape') { event.preventDefault(); cancelEdit.current = true; event.currentTarget.blur(); }
+      }} />
+    </li>
+  );
+}
+
 function activityTime(createdAt: number): string {
   return new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(createdAt));
 }
@@ -102,16 +131,6 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     } catch {
       // Background synchronization keeps the last good state instead of exposing infrastructure errors.
     }
-  }, []);
-
-  const act = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
-    const epoch = ++requestEpoch.current;
-    setBusy(true); setError('');
-    try {
-      const next = await prepareWorkspacePayload(await workspaceApi({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, ...extra }) }));
-      if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(visibleError(cause, 'Request failed. Please try again.')); }
-    finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
   const decideRequest = useCallback(async (action: 'approve' | 'reject', userId: string) => {
@@ -151,9 +170,10 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     try {
       const form = new FormData(); form.set('extension', file);
       const response = await fetch('/api/extension-download', { method: 'POST', body: form });
-      const result = await response.json() as { error?: string };
+      const result = await response.json() as { error?: string; version?: string };
       if (!response.ok) throw new Error(result.error || 'Extension upload failed.');
-      setExtensionUploadMessage('Download ZIP updated.');
+      if (result.version) setData((current) => ({ ...current, availableExtensionVersion: result.version }));
+      setExtensionUploadMessage(`Download ZIP updated${result.version ? ` to ${result.version}` : ''}.`);
     } catch (cause) { setExtensionUploadMessage(visibleError(cause, 'Extension upload failed.')); }
     finally { setExtensionUploadBusy(false); }
   }, []);
@@ -193,10 +213,25 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       window.location.assign('/signout-with-chatgpt?return_to=/');
     }
   }, []);
-  const saveProfile = useCallback(async (displayName: string, image: File | null) => {
-    if (image) await finishProfile(displayName, image);
-    else await act('update_profile', { displayName });
-  }, [act, finishProfile]);
+  const saveOwnName = useCallback(async (displayName: string): Promise<boolean> => {
+    const epoch = ++requestEpoch.current;
+    setBusy(true); setError('');
+    setData((current) => ({
+      ...current,
+      currentUser: current.currentUser ? { ...current.currentUser, displayName } : current.currentUser,
+      members: current.members.map((member) => member.userId === current.currentUser?.userId ? { ...member, displayName } : member),
+    }));
+    try {
+      const next = await prepareWorkspacePayload(await workspaceApi({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'update_profile', displayName }) }));
+      if (requestEpoch.current === epoch) setData(next);
+      return true;
+    } catch (cause) {
+      setError(visibleError(cause, 'Profile update failed. Please try again.'));
+      void refresh();
+      return false;
+    } finally { if (requestEpoch.current === epoch) setBusy(false); }
+  }, [refresh]);
+  const saveOwnImage = useCallback((displayName: string, image: File) => finishProfile(displayName, image), [finishProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,23 +290,15 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
 
       {settingsOpen && (
         <dialog ref={settingsRef} className="settings-popup" aria-label="Quadruzz settings" open>
-
-          <ProfileSettings key={data.currentUser?.displayName || ''} displayName={data.currentUser?.displayName || ''} saveProfile={saveProfile} closeSettings={() => setSettingsOpen(false)} busy={busy} />
-          <button className="sign-out" type="button" disabled={busy} onClick={() => void signOut()}>Sign out</button>
-          {data.currentUser?.role === 'host' && (
-            <div className="extension-upload-control">
-              <label className={extensionUploadBusy ? 'disabled' : ''}>
-                <input type="file" accept=".zip,application/zip" disabled={extensionUploadBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadExtension(file); event.currentTarget.value = ''; }} />
-                {extensionUploadBusy ? 'Uploading extension ZIP…' : 'Upload extension ZIP'}
-              </label>
-              {extensionUploadMessage && <span>{extensionUploadMessage}</span>}
-            </div>
-          )}
-          <div className="settings-divider" />
-          <h3 className="members-title">Members</h3>
+          <div className="members-heading">
+            <h3 className="members-title">Members</h3>
+            <button className="settings-close" type="button" aria-label="Close settings" title="Close" onClick={() => setSettingsOpen(false)}><X aria-hidden="true" /></button>
+          </div>
 
           <ul className="member-list">
-            {data.members.map((member) => (
+            {data.members.map((member) => member.userId === data.currentUser?.userId ? (
+              <EditableMemberRow key={`${member.userId}:${member.displayName}`} member={member} busy={busy} saveName={saveOwnName} saveImage={saveOwnImage} />
+            ) : (
               <li key={member.userId}>
                 <ProfileImage src={member.imageUrl} />
                 <span>{member.displayName}</span>
@@ -349,11 +376,25 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
           {error && <p className="plain-error">{error}</p>}
           <div className="settings-divider" />
           <div className="settings-extension-actions" aria-label="Get the Quadruzz extension">
+            <div className="extension-version-status">
+              <span>Installed version <strong>{data.installedExtensionVersion || 'Not detected'}</strong></span>
+              <span>Available ZIP version <strong>{data.availableExtensionVersion || '0.1.0'}</strong></span>
+            </div>
             {CHROME_STORE_URL
               ? <a className="settings-extension-action" href={CHROME_STORE_URL}>Install through Chrome Store</a>
               : <button className="settings-extension-action" type="button" disabled>Chrome Store page unavailable</button>}
             <a className="settings-extension-action" href="/api/extension-download" download>Download ZIP</a>
+            {data.currentUser?.role === 'host' && (
+              <div className="extension-upload-control">
+                <label className={extensionUploadBusy ? 'disabled' : ''}>
+                  <input type="file" accept=".zip,application/zip" disabled={extensionUploadBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadExtension(file); event.currentTarget.value = ''; }} />
+                  {extensionUploadBusy ? 'Uploading extension ZIP…' : 'Upload extension ZIP'}
+                </label>
+                {extensionUploadMessage && <span>{extensionUploadMessage}</span>}
+              </div>
+            )}
           </div>
+          <button className="sign-out" type="button" disabled={busy} onClick={() => void signOut()}>Sign out</button>
         </dialog>
       )}
 
@@ -375,20 +416,6 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
   );
 }
 
-function ProfileSettings({ displayName, saveProfile, closeSettings }: { displayName: string; saveProfile: (displayName: string, image: File | null) => Promise<void>; closeSettings: () => void; busy: boolean }) {
-  const [name, setName] = useState(displayName);
-
-  return (
-    <section className="profile-settings">
-      <div className="profile-settings-heading">
-        <h3>You</h3>
-        <button className="settings-close" type="button" aria-label="Close settings" title="Close" onClick={closeSettings}><X aria-hidden="true" /></button>
-      </div>
-      <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} onBlur={() => { if (name.trim() && name.trim() !== displayName) void saveProfile(name, null); }} />
-      <input aria-label="New profile image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0] || null; if (file) void saveProfile(name, file); event.currentTarget.value = ''; }} />
-    </section>
-  );
-}
 function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File | null, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; error: string; extensionAuthorizeUrl: string | null }) {
   const pending = data.accessState === 'pending';
   const [optimisticPending, setOptimisticPending] = useState(false);

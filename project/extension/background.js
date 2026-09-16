@@ -337,7 +337,7 @@ async function synchronizeActivity() {
     const response = await fetch(`${BASE}/api/extension`, {
       method: 'POST',
       headers: { authorization: `Bearer ${stored.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId }),
+      body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId, extensionVersion: chrome.runtime.getManifest().version }),
     });
     if (response.status === 401) await chrome.storage.local.remove(['token', 'profileImageCache']);
   } catch { /* The next alarm retries transient browser or network failures. */ }

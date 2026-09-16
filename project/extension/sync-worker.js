@@ -2,6 +2,7 @@ const BASE = 'https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const POLL_MS = 1000;
 const HEARTBEAT_MS = 15000;
 let token = null;
+let extensionVersion = null;
 let timer = null;
 let generation = 0;
 let heartbeatAt = 0;
@@ -12,6 +13,7 @@ const noteVersions = new Map();
 self.addEventListener('message', (event) => {
   if (event.data?.type !== 'quadruzz-token') return;
   token = event.data.token || null;
+  extensionVersion = event.data.extensionVersion || null;
   generation += 1;
   notesInitialized = false;
   noteVersions.clear();
@@ -53,7 +55,7 @@ async function heartbeat(expectedGeneration) {
   const response = await fetch(BASE + '/api/extension', {
     method: 'POST',
     headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
-    body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId: sessionId }),
+    body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId: sessionId, extensionVersion }),
   });
   if (response.ok) heartbeatAt = Date.now();
   else if (response.status === 401 || response.status === 403) self.postMessage({ type: 'quadruzz-central-unauthorized' });

@@ -56,7 +56,7 @@ export const extensionCredentials = sqliteTable('extension_credentials', {
 }, (table) => [index('extension_credentials_user_idx').on(table.userId)]);
 
 export const extensionSessions = sqliteTable('extension_sessions', {
-  sessionId: text('session_id').primaryKey(), userId: text('user_id').notNull(), lastSeenAt: integer('last_seen_at').notNull(),
+  sessionId: text('session_id').primaryKey(), userId: text('user_id').notNull(), lastSeenAt: integer('last_seen_at').notNull(), extensionVersion: text('extension_version'),
 }, (table) => [index('extension_sessions_user_seen_idx').on(table.userId, table.lastSeenAt)]);
 export const roleStatuses = sqliteTable('role_statuses', {
   key: text('key').primaryKey(),

@@ -1,6 +1,6 @@
 const worker = new Worker('sync-worker.js');
 
-function sendToken(token) { worker.postMessage({ type: 'quadruzz-token', token: token || null }); }
+function sendToken(token) { worker.postMessage({ type: 'quadruzz-token', token: token || null, extensionVersion: chrome.runtime.getManifest().version }); }
 
 worker.addEventListener('message', (event) => {
   try {

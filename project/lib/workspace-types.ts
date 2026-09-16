@@ -27,4 +27,6 @@ export type WorkspacePayload = {
   boardTitle: string;
   hostConfigurationRequired?: boolean;
   extensionEverSeen?: boolean;
+  installedExtensionVersion?: string | null;
+  availableExtensionVersion?: string;
 };

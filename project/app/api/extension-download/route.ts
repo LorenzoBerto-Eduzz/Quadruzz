@@ -1,6 +1,7 @@
 import { getChatGPTUser } from '@/app/chatgpt-auth';
-import { getFiles } from '@/db';
+import { getDb, getFiles } from '@/db';
 import { requireApproved } from '@/lib/workspace-data';
+import { extensionVersionFromZip } from '@/lib/extension-zip';
 
 export const dynamic = 'force-dynamic';
 const EXTENSION_KEY = 'extension/cross-quadruzz-extension-0.1.0.zip';
@@ -38,7 +39,9 @@ export async function POST(request: Request) {
     const bytes = await candidate.arrayBuffer();
     const signature = new Uint8Array(bytes, 0, Math.min(4, bytes.byteLength));
     if (signature.length < 4 || signature[0] !== 0x50 || signature[1] !== 0x4b) return Response.json({ error: 'The selected file is not a valid ZIP.' }, { status: 400 });
+    const version = await extensionVersionFromZip(bytes);
     await getFiles().put(EXTENSION_KEY, bytes, { httpMetadata: { contentType: 'application/zip', contentDisposition: 'attachment; filename="cross-quadruzz-extension-0.1.0.zip"' } });
-    return Response.json({ ok: true });
-  } catch { return Response.json({ error: 'Extension upload failed.' }, { status: 400 }); }
+    await getDb().prepare("INSERT INTO board_state (key,value,updated_at,updated_by) VALUES ('extension_zip_version',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by").bind(version, Date.now(), user.userId).run();
+    return Response.json({ ok: true, version });
+  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Extension upload failed.' }, { status: 400 }); }
 }
