@@ -6,8 +6,9 @@ header{justify-content:flex-end;gap:6px}#open-hq-home svg{width:11px;height:11px
 .action-popup.action-popup-pending main{display:none}
 .note-editor{height:18px}.note-editor textarea{height:18px;min-height:18px;max-height:31px}
 .note-label,.note-label-text{overflow:visible}
-.member.two-line-note .name,.member.two-line-note .state{transform:translateY(-2px)}
-.member.two-line-note .note-label.two-lines{bottom:2px}
+.member.two-line-note .name,.member.two-line-note .state{transform:translateY(-1px)}
+.member.two-line-note .note-label.two-lines{bottom:3px;height:23px}
+.member.two-line-note .note-label.two-lines .note-label-text{max-height:20px;line-height:10px}
 .member.has-note .role-label{transform:translateY(-1px)}
 .member.has-note:not(.two-line-note) .name,.member.has-note:not(.two-line-note) .state{transform:translateY(0)}
 .member.has-note:not(.two-line-note) .note-label:not(.two-lines){bottom:7px}
