@@ -413,19 +413,21 @@ function renderMembers(){
   if(pickerOpen&&roleTrigger){
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'));
+    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'))-1;
     picker.style.top=`${top}px`;
-    picker.style.left=standaloneRole?'0':'48px';
-    picker.style.width=standaloneRole?'100%':'193px';
+    picker.style.left=standaloneRole?'0':'41px';
+    picker.style.right=standaloneRole?'auto':'0';
+    picker.style.width=standaloneRole?'100%':'auto';
     picker.style.maxHeight=`calc(100vh - ${top}px)`;
     pickerDesiredHeight=top+(matchingRoles().length+1)*24;
   }else if(noteOpen&&noteTrigger){
     document.body.insertAdjacentHTML('beforeend',noteEditorMarkup());
     const editor=document.querySelector('.note-editor');
-    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'));
+    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'))-1;
     editor.style.top=`${top}px`;
-    editor.style.left=standaloneNote?'0':'48px';
-    editor.style.width=standaloneNote?'100%':'193px';
+    editor.style.left=standaloneNote?'0':'41px';
+    editor.style.right=standaloneNote?'auto':'0';
+    editor.style.width=standaloneNote?'100%':'auto';
     editor.dataset.top=String(top);
     pickerDesiredHeight=top+18;
   }
@@ -495,7 +497,7 @@ async function loadMembers(forceRender=false){
     if(overlayVisible&&!standaloneRole&&!standaloneNote&&!standaloneNotification)await markFreshNotes(data);
     latestData=data;
     latestImages=images;
-    if(!lastRenderSignature||(!pickerOpen&&!noteOpen&&(forceRender||viewSignature()!==lastRenderSignature)))renderMembers();
+    if(!lastRenderSignature||forceRender||viewSignature()!==lastRenderSignature)renderMembers();
     void resolvedImages.then(nextImages=>{if(sequence<appliedLoadSequence)return;const changed=nextImages.some((image,index)=>image!==latestImages[index]);if(!changed)return;latestImages=nextImages;updateMemberImages(nextImages)}).catch(()=>{});
   }catch(error){if(stopInvalidContext(error))return;reportReady()}
 }
