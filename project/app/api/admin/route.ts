@@ -8,12 +8,19 @@ export const dynamic = 'force-dynamic';
 
 type PendingProfile = { email: string; display_name: string; profile_image_key: string; expires_at: number };
 
+function roleStatusKey(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const label = value.trim().replace(/\s+/g, ' ');
+  if (!label || label.length > 30) return null;
+  return label.toLocaleLowerCase('en-US');
+}
+
 export async function POST(request: Request) {
   const user = await getChatGPTUser();
   if (!user) return Response.json({ error: 'Authentication required.' }, { status: 401 });
   try {
     const actor = await requireApproved(user.userId);
-    const body = await request.json() as { action?: string; userId?: string; title?: string };
+    const body = await request.json() as { action?: string; userId?: string; title?: string; roleStatus?: string };
     const db = getDb(); const now = Date.now(); const targetId = body.userId?.trim();
     if (body.action === 'approve') {
       if (!targetId) throw new Error('User is required.');
@@ -50,6 +57,16 @@ export async function POST(request: Request) {
       const title = body.title?.trim(); if (!title || title.length > 64) throw new Error('Board title must be 1–64 characters.');
       await db.prepare(`INSERT INTO board_state (key,value,updated_at,updated_by) VALUES ('title',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`).bind(title, now, user.userId).run();
       await recordActivity(`${actor.display_name || user.email} changed the board title`, now);
+    } else if (body.action === 'delete_role_status') {
+      const key = roleStatusKey(body.roleStatus);
+      if (!key) throw new Error('Role status is required.');
+      const roleStatus = await db.prepare('SELECT label FROM role_statuses WHERE key=?').bind(key).first<{ label: string }>();
+      if (!roleStatus) throw new Error('Role status no longer exists.');
+      await db.batch([
+        db.prepare("UPDATE members SET acting_state='' WHERE acting_state=?").bind(roleStatus.label),
+        db.prepare('DELETE FROM role_statuses WHERE key=?').bind(key),
+      ]);
+      await recordActivity(`${actor.display_name || user.email} removed role status ${roleStatus.label}`, now);
     } else if (body.action === 'clear_test_data') {
       if (actor.role !== 'host') throw new Error('Only the host can clear test data.');
       const objects = await getFiles().list({ prefix: 'profiles/' });

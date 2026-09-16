@@ -99,6 +99,15 @@ button, input { font: inherit; }
 .activity-list li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-list time { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .activity-empty { margin: 0; padding: .75rem; color: var(--muted); text-align: center; font-size: .875rem; }
+.role-status-panel { max-height: 11rem; overflow-y: auto; border: 1px solid rgba(255,255,255,.12); border-radius: .5rem; scrollbar-width: none; -ms-overflow-style: none; }
+.role-status-panel::-webkit-scrollbar { display: none; }
+.role-status-list { display: grid; gap: .1rem; margin: 0; padding: .4rem .6rem; list-style: none; }
+.role-status-list li { display: grid; grid-template-columns: minmax(0,1fr) 1.5rem; align-items: center; gap: .5rem; min-height: 1.75rem; font-size: .875rem; }
+.role-status-list li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-status-list button { display: grid; width: 1.5rem; height: 1.5rem; place-items: center; justify-self: end; border: 0; border-radius: 50%; background: transparent; color: #ffd2d2; padding: 0; cursor: pointer; }
+.role-status-list button:hover { background: rgba(255,255,255,.08); }
+.role-status-list button:disabled { opacity: .5; cursor: default; }
+.role-status-list button svg { width: .8rem; height: .8rem; }
 .gear-dot { position: absolute; top: -.1rem; right: -.1rem; width: .65rem; height: .65rem; border: 2px solid var(--canvas); border-radius: 50%; background: #f2d17b; }
 
 .privacy-page { min-height: 100vh; padding: clamp(2rem, 6vw, 5rem) 1.25rem; background: var(--canvas); }

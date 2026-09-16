@@ -19,6 +19,7 @@ export type WorkspacePayload = {
   members: PublicMember[];
   requests: PendingRequest[];
   activity: ActivityEntry[];
+  roleStatuses: string[];
   boardTitle: string;
   hostConfigurationRequired?: boolean;
   extensionEverSeen?: boolean;

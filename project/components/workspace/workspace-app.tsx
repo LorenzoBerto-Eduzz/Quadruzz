@@ -59,11 +59,11 @@ function visibleError(cause: unknown, fallback: string): string {
   return /D1_ERROR|overloaded|queued for too long|database/i.test(message) ? fallback : message;
 }
 
-async function adminApi(action: string, userId: string): Promise<WorkspacePayload> {
+async function adminApi(action: string, extra: Record<string, unknown> = {}): Promise<WorkspacePayload> {
   return readPayload(await fetch('/api/admin', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ action, userId }),
+    body: JSON.stringify({ action, ...extra }),
   }), 'Administration failed.');
 }
 
@@ -82,6 +82,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [roleStatusesOpen, setRoleStatusesOpen] = useState(false);
   const [extensionUploadBusy, setExtensionUploadBusy] = useState(false);
   const [extensionUploadMessage, setExtensionUploadMessage] = useState('');
   const requestEpoch = useRef(0);
@@ -115,7 +116,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     const epoch = ++requestEpoch.current;
     setBusy(true); setError('');
     try {
-      const next = await prepareWorkspacePayload(await adminApi(action, userId));
+      const next = await prepareWorkspacePayload(await adminApi(action, { userId }));
       if (requestEpoch.current === epoch) setData(next);
     } catch (cause) { setError(visibleError(cause, 'Request decision failed. Please try again.')); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
@@ -126,9 +127,20 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     const epoch = ++requestEpoch.current;
     setBusy(true); setError('');
     try {
-      const next = await prepareWorkspacePayload(await adminApi('remove_member', userId));
+      const next = await prepareWorkspacePayload(await adminApi('remove_member', { userId }));
       if (requestEpoch.current === epoch) setData(next);
     } catch (cause) { setError(visibleError(cause, 'Member removal failed. Please try again.')); }
+    finally { if (requestEpoch.current === epoch) setBusy(false); }
+  }, []);
+
+  const deleteRoleStatus = useCallback(async (roleStatus: string) => {
+    if (!window.confirm(`Remove “${roleStatus}”? Members using it will be reset to no role status.`)) return;
+    const epoch = ++requestEpoch.current;
+    setBusy(true); setError('');
+    try {
+      const next = await prepareWorkspacePayload(await adminApi('delete_role_status', { roleStatus }));
+      if (requestEpoch.current === epoch) setData(next);
+    } catch (cause) { setError(visibleError(cause, 'Role status removal failed. Please try again.')); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -277,6 +289,21 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
             ))}
           </ul>
           <div className="settings-divider" />
+          <button className="activity-toggle" type="button" aria-expanded={roleStatusesOpen} onClick={() => setRoleStatusesOpen((open) => !open)}>Role Statuses</button>
+          {roleStatusesOpen && (
+            <section className="role-status-panel" aria-label="Role statuses">
+              {data.roleStatuses.length ? (
+                <ul className="role-status-list">
+                  {data.roleStatuses.map((roleStatus) => (
+                    <li key={roleStatus}>
+                      <span>{roleStatus}</span>
+                      <button type="button" aria-label={`Remove ${roleStatus}`} title="Remove role status" disabled={busy} onClick={() => void deleteRoleStatus(roleStatus)}><X aria-hidden="true" /></button>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="activity-empty">No role statuses yet</p>}
+            </section>
+          )}
           <button className="activity-toggle" type="button" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}>Log</button>
           {activityOpen && (
             <section className="activity-panel" aria-label="Recent activity">
