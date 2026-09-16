@@ -8,3 +8,6 @@ header{justify-content:flex-end;gap:6px}#open-hq-home svg{width:11px;height:11px
 .note-label,.note-label-text{overflow:visible}
 .member.two-line-note .name,.member.two-line-note .state{transform:translateY(-3px)}
 .member.two-line-note .note-label.two-lines{bottom:3px}
+.member.has-note .role-label{transform:translateY(-1px)}
+.member.has-note:not(.two-line-note) .name,.member.has-note:not(.two-line-note) .state{transform:translateY(-1px)}
+.member.has-note:not(.two-line-note) .note-label:not(.two-lines){bottom:9px}
