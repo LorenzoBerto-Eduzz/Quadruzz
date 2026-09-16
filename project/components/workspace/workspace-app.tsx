@@ -347,6 +347,13 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
             </section>
           )}
           {error && <p className="plain-error">{error}</p>}
+          <div className="settings-divider" />
+          <div className="settings-extension-actions" aria-label="Get the Quadruzz extension">
+            {CHROME_STORE_URL
+              ? <a className="settings-extension-action" href={CHROME_STORE_URL}>Install through Chrome Store</a>
+              : <button className="settings-extension-action" type="button" disabled>Chrome Store page unavailable</button>}
+            <a className="settings-extension-action" href="/api/extension-download" download>Download ZIP</a>
+          </div>
         </dialog>
       )}
 

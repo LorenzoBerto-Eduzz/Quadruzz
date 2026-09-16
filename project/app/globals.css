@@ -83,6 +83,10 @@ button, input { font: inherit; }
 .reject-request { color: #ffaaaa; }
 .sign-out { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .4rem .65rem; cursor: pointer; text-decoration: none; }
 .sign-out:hover { background: rgba(255,255,255,.07); }
+.settings-extension-actions { display: grid; gap: .65rem; }
+.settings-extension-action { display: grid; min-height: 2.4rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .45rem .65rem; cursor: pointer; text-align: center; text-decoration: none; }
+.settings-extension-action:hover { background: rgba(255,255,255,.07); }
+.settings-extension-action:disabled { opacity: .5; cursor: default; }
 .sign-out:disabled { opacity: .5; cursor: default; }
 .extension-upload-control { display: grid; gap: .4rem; }
 .extension-upload-control label { display: grid; min-height: 2.4rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; padding: .45rem .65rem; cursor: pointer; }
