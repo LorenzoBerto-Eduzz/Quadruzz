@@ -413,7 +413,7 @@ function renderMembers(){
   if(pickerOpen&&roleTrigger){
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'))-1;
+    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'))-2;
     picker.style.top=`${top}px`;
     picker.style.left=standaloneRole?'0':'41px';
     picker.style.right=standaloneRole?'auto':'0';
@@ -423,7 +423,7 @@ function renderMembers(){
   }else if(noteOpen&&noteTrigger){
     document.body.insertAdjacentHTML('beforeend',noteEditorMarkup());
     const editor=document.querySelector('.note-editor');
-    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'))-1;
+    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'))-2;
     editor.style.top=`${top}px`;
     editor.style.left=standaloneNote?'0':'41px';
     editor.style.right=standaloneNote?'auto':'0';
