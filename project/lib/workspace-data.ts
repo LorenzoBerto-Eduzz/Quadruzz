@@ -2,7 +2,7 @@ import { getDb, getFiles, configuredHostUserId } from '@/db';
 import type { ChatGPTUser } from '@/app/chatgpt-auth';
 import { listActivity } from '@/lib/activity-log';
 import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS } from '@/lib/extension-activity';
-import type { PendingRequest, PublicMember, Role, WorkspacePayload } from '@/lib/workspace-types';
+import type { NoteLogEntry, PendingRequest, PublicMember, Role, RoleLogEntry, WorkspacePayload } from '@/lib/workspace-types';
 
 const REQUEST_TTL_MS = 24 * 60 * 60_000;
 let nextExpiredRequestCleanupAt = 0;
@@ -66,7 +66,7 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   await cleanupExpiredRequests(now);
   const db = getDb();
   const member = await db.prepare('SELECT * FROM members WHERE user_id = ?').bind(user.userId).first<MemberRow>();
-  const base = { currentUser: { userId: user.userId, email: user.email }, members: [], requests: [], activity: [], roleStatuses: [], boardTitle: 'Cross-Quadruzz' };
+  const base = { currentUser: { userId: user.userId, email: user.email }, members: [], requests: [], activity: [], noteLog: [], roleLog: [], roleStatuses: [], boardTitle: 'Cross-Quadruzz' };
   if (!member || member.status !== 'approved') {
     const request = await db.prepare("SELECT status,display_name,profile_image_key,expires_at FROM access_requests WHERE user_id=? AND status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>?").bind(user.userId, now).first<RequestRow>();
     if (request) return { ...base, accessState: 'pending', currentUser: { ...base.currentUser, displayName: request.display_name, imageUrl: `/api/profile-image?pending=1&v=${request.expires_at || now}`, pendingImageReceived: Boolean(request.profile_image_key) }, hostConfigurationRequired: !configuredHostUserId() };
@@ -82,8 +82,10 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   const requests = (await db.prepare("SELECT user_id AS userId,email,requested_at AS requestedAt FROM access_requests WHERE status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>? ORDER BY requested_at ASC").bind(now).all<PendingRequest>()).results;
   const board = await db.prepare("SELECT value FROM board_state WHERE key='title'").first<{value: string}>();
   const activity = await listActivity();
+  const noteLog = (await db.prepare('SELECT id,display_name AS displayName,note,created_at AS createdAt FROM note_log ORDER BY created_at DESC,id DESC LIMIT 100').all<NoteLogEntry>()).results;
+  const roleLog = (await db.prepare('SELECT id,display_name AS displayName,old_role AS oldRole,new_role AS newRole,created_at AS createdAt FROM role_log ORDER BY created_at DESC,id DESC LIMIT 100').all<RoleLogEntry>()).results;
   const roleStatuses = (await db.prepare('SELECT label FROM role_statuses ORDER BY label COLLATE NOCASE, key').all<{ label: string }>()).results.map((row) => row.label);
-  return { accessState: 'approved', currentUser, members, requests, activity, roleStatuses, boardTitle: board?.value || 'Cross-Quadruzz', extensionEverSeen: Boolean(extensionHistory) };
+  return { accessState: 'approved', currentUser, members, requests, activity, noteLog, roleLog, roleStatuses, boardTitle: board?.value || 'Cross-Quadruzz', extensionEverSeen: Boolean(extensionHistory) };
 }
 
 export async function requireApproved(userId: string): Promise<MemberRow> {

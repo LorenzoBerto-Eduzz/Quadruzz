@@ -62,9 +62,12 @@ export async function POST(request: Request) {
       if (!key) throw new Error('Role status is required.');
       const roleStatus = await db.prepare('SELECT label FROM role_statuses WHERE key=?').bind(key).first<{ label: string }>();
       if (!roleStatus) throw new Error('Role status no longer exists.');
+      const affectedMembers = (await db.prepare("SELECT user_id,display_name FROM members WHERE acting_state=? AND status='approved' AND display_name IS NOT NULL").bind(roleStatus.label).all<{ user_id: string; display_name: string }>()).results;
       await db.batch([
+        ...affectedMembers.map((member) => db.prepare('INSERT INTO role_log (user_id,display_name,old_role,new_role,created_at) VALUES (?,?,?,?,?)').bind(member.user_id, member.display_name, roleStatus.label, '', now)),
         db.prepare("UPDATE members SET acting_state='' WHERE acting_state=?").bind(roleStatus.label),
         db.prepare('DELETE FROM role_statuses WHERE key=?').bind(key),
+        db.prepare('DELETE FROM role_log WHERE id NOT IN (SELECT id FROM role_log ORDER BY created_at DESC,id DESC LIMIT 100)'),
       ]);
       await recordActivity(`${actor.display_name || user.email} removed role status ${roleStatus.label}`, now);
     } else if (body.action === 'clear_test_data') {
@@ -83,6 +86,8 @@ export async function POST(request: Request) {
         db.prepare('DELETE FROM extension_credentials'),
         db.prepare('DELETE FROM extension_sessions'),
         db.prepare('DELETE FROM role_statuses'),
+        db.prepare('DELETE FROM note_log'),
+        db.prepare('DELETE FROM role_log'),
         db.prepare('DELETE FROM board_state'),
         db.prepare('DELETE FROM activity_log'),
       ]);

@@ -12,6 +12,8 @@ export type PublicMember = {
 
 export type PendingRequest = { userId: string; email: string; requestedAt: number };
 export type ActivityEntry = { id: number; message: string; createdAt: number };
+export type NoteLogEntry = { id: number; displayName: string; note: string; createdAt: number };
+export type RoleLogEntry = { id: number; displayName: string; oldRole: string; newRole: string; createdAt: number };
 
 export type WorkspacePayload = {
   accessState: AccessState;
@@ -19,6 +21,8 @@ export type WorkspacePayload = {
   members: PublicMember[];
   requests: PendingRequest[];
   activity: ActivityEntry[];
+  noteLog: NoteLogEntry[];
+  roleLog: RoleLogEntry[];
   roleStatuses: string[];
   boardTitle: string;
   hostConfigurationRequired?: boolean;

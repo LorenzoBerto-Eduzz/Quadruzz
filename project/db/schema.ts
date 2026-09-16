@@ -64,3 +64,20 @@ export const roleStatuses = sqliteTable('role_statuses', {
   createdBy: text('created_by').notNull(),
   createdAt: integer('created_at').notNull(),
 });
+
+export const noteLog = sqliteTable('note_log', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull(),
+  displayName: text('display_name').notNull(),
+  note: text('note').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [index('note_log_created_idx').on(table.createdAt)]);
+
+export const roleLog = sqliteTable('role_log', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: text('user_id').notNull(),
+  displayName: text('display_name').notNull(),
+  oldRole: text('old_role').notNull(),
+  newRole: text('new_role').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [index('role_log_created_idx').on(table.createdAt)]);

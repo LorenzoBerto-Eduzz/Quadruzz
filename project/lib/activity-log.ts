@@ -1,7 +1,7 @@
 import { getDb } from '@/db';
 import type { ActivityEntry } from '@/lib/workspace-types';
 
-const ACTIVITY_LIMIT = 30;
+const ACTIVITY_LIMIT = 100;
 // Hidden Chrome tabs may only receive timer time about once per minute. Actual tab
 // closes are sent immediately; this fallback is deliberately longer to avoid
 // turning healthy background tabs offline between throttled heartbeats.

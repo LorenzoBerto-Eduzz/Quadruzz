@@ -11,6 +11,7 @@ const decodedProfileImages = new Map<string, HTMLImageElement>();
 const pendingProfileImages = new Map<string, Promise<void>>();
 
 type LocalProfileImage = { url: string; image: HTMLImageElement };
+type LogTab = 'roles' | 'notes' | 'status' | 'errors';
 
 async function decodeLocalProfileImage(file: File): Promise<LocalProfileImage | null> {
   const url = URL.createObjectURL(file);
@@ -81,7 +82,8 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activityOpen, setActivityOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logTab, setLogTab] = useState<LogTab>('status');
   const [roleStatusesOpen, setRoleStatusesOpen] = useState(false);
   const [extensionUploadBusy, setExtensionUploadBusy] = useState(false);
   const [extensionUploadMessage, setExtensionUploadMessage] = useState('');
@@ -304,16 +306,44 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
               ) : <p className="activity-empty">No role statuses yet</p>}
             </section>
           )}
-          <button className="activity-toggle" type="button" aria-expanded={activityOpen} onClick={() => setActivityOpen((open) => !open)}>Log</button>
-          {activityOpen && (
-            <section className="activity-panel" aria-label="Recent activity">
-              {data.activity.length ? (
-                <ul className="activity-list">
-                  {data.activity.map((entry) => (
-                    <li key={entry.id}><span>{entry.message}</span><time dateTime={new Date(entry.createdAt).toISOString()}>{activityTime(entry.createdAt)}</time></li>
-                  ))}
-                </ul>
-              ) : <p className="activity-empty">No activity yet</p>}
+          <button className="activity-toggle" type="button" aria-expanded={logsOpen} onClick={() => { if (logsOpen) setLogsOpen(false); else { setLogTab('status'); setLogsOpen(true); } }}>Logs</button>
+          {logsOpen && (
+            <section className="logs-panel" aria-label="Logs">
+              <div className="log-tabs" role="tablist" aria-label="Log category">
+                {(['roles', 'notes', 'status', 'errors'] as LogTab[]).map((tab) => (
+                  <button key={tab} type="button" role="tab" aria-selected={logTab === tab} className={logTab === tab ? 'active' : ''} onClick={() => setLogTab(tab)}>{tab[0].toUpperCase() + tab.slice(1)}</button>
+                ))}
+              </div>
+              <div className="log-content" role="tabpanel">
+                {logTab === 'roles' && (data.roleLog.length ? (
+                  <ul className="structured-log-list">
+                    {data.roleLog.map((entry) => (
+                      <li key={entry.id}>
+                        <div className="log-entry-heading"><span>{entry.displayName}</span><time dateTime={new Date(entry.createdAt).toISOString()}>{activityTime(entry.createdAt)}</time></div>
+                        <p>{entry.oldRole || 'No role'} <span aria-hidden="true">→</span> {entry.newRole || 'No role'}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="activity-empty">No role changes yet</p>)}
+                {logTab === 'notes' && (data.noteLog.length ? (
+                  <ul className="structured-log-list">
+                    {data.noteLog.map((entry) => (
+                      <li key={entry.id}>
+                        <div className="log-entry-heading"><span>{entry.displayName}</span><time dateTime={new Date(entry.createdAt).toISOString()}>{activityTime(entry.createdAt)}</time></div>
+                        <p>{entry.note}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="activity-empty">No notes recorded yet</p>)}
+                {logTab === 'status' && (data.activity.length ? (
+                  <ul className="activity-list">
+                    {data.activity.map((entry) => (
+                      <li key={entry.id}><span>{entry.message}</span><time dateTime={new Date(entry.createdAt).toISOString()}>{activityTime(entry.createdAt)}</time></li>
+                    ))}
+                  </ul>
+                ) : <p className="activity-empty">No status activity yet</p>)}
+                {logTab === 'errors' && <p className="activity-empty">No errors recorded</p>}
+              </div>
             </section>
           )}
           {error && <p className="plain-error">{error}</p>}

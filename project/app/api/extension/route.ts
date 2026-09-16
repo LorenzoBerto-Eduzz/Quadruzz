@@ -47,8 +47,8 @@ export async function POST(request: Request) {
   try {
     const userId = await authenticateExtensionIdentity(request);
     if (!userId) return reply({ error: 'Extension authorization required.' }, 401);
-    const approved = await getDb().prepare("SELECT 1 FROM members WHERE user_id=? AND status='approved'").bind(userId).first();
-    if (!approved) return reply({ error: 'Approved membership required.' }, 403);
+    const member = await getDb().prepare("SELECT display_name,acting_state FROM members WHERE user_id=? AND status='approved'").bind(userId).first<{ display_name: string | null; acting_state: string }>();
+    if (!member) return reply({ error: 'Approved membership required.' }, 403);
     const body = await request.json() as { actingState?: string; createActingState?: boolean; note?: string | null; extensionAction?: 'heartbeat'; extensionSessionId?: string; presenceAction?: 'heartbeat' | 'leave'; presenceSessionId?: string };
     if (body.extensionAction === 'heartbeat') {
       const sessionId = body.extensionSessionId?.trim();
@@ -83,9 +83,24 @@ export async function POST(request: Request) {
       actingState = roleStatus.label;
     }
     const noteUpdatedAt = body.note === undefined ? undefined : Date.now();
-    if (actingState !== undefined && body.note !== undefined) await db.prepare('UPDATE members SET acting_state=?,note=?,note_updated_at=? WHERE user_id=?').bind(actingState, note, noteUpdatedAt, userId).run();
-    else if (actingState !== undefined) await db.prepare('UPDATE members SET acting_state=? WHERE user_id=?').bind(actingState, userId).run();
-    else await db.prepare('UPDATE members SET note=?,note_updated_at=? WHERE user_id=?').bind(note, noteUpdatedAt, userId).run();
+    const updates = actingState !== undefined && body.note !== undefined
+      ? [db.prepare('UPDATE members SET acting_state=?,note=?,note_updated_at=? WHERE user_id=?').bind(actingState, note, noteUpdatedAt, userId)]
+      : actingState !== undefined
+        ? [db.prepare('UPDATE members SET acting_state=? WHERE user_id=?').bind(actingState, userId)]
+        : [db.prepare('UPDATE members SET note=?,note_updated_at=? WHERE user_id=?').bind(note, noteUpdatedAt, userId)];
+    if (actingState !== undefined && actingState !== member.acting_state) {
+      updates.push(
+        db.prepare('INSERT INTO role_log (user_id,display_name,old_role,new_role,created_at) VALUES (?,?,?,?,?)').bind(userId, member.display_name || 'Member', member.acting_state, actingState, noteUpdatedAt || Date.now()),
+        db.prepare('DELETE FROM role_log WHERE id NOT IN (SELECT id FROM role_log ORDER BY created_at DESC,id DESC LIMIT 100)'),
+      );
+    }
+    if (note !== undefined && note !== null) {
+      updates.push(
+        db.prepare('INSERT INTO note_log (user_id,display_name,note,created_at) VALUES (?,?,?,?)').bind(userId, member.display_name || 'Member', note, noteUpdatedAt || Date.now()),
+        db.prepare('DELETE FROM note_log WHERE id NOT IN (SELECT id FROM note_log ORDER BY created_at DESC,id DESC LIMIT 100)'),
+      );
+    }
+    await db.batch(updates);
     return reply({ ok: true, actingState, note, noteUpdatedAt });
   } catch { return reply({ error: 'Update failed.' }, 400); }
 }
