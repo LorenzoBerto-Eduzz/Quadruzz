@@ -81,3 +81,9 @@ export const roleLog = sqliteTable('role_log', {
   newRole: text('new_role').notNull(),
   createdAt: integer('created_at').notNull(),
 }, (table) => [index('role_log_created_idx').on(table.createdAt)]);
+
+export const errorLog = sqliteTable('error_log', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  message: text('message').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => [index('error_log_created_idx').on(table.createdAt)]);

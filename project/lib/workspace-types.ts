@@ -14,6 +14,7 @@ export type PendingRequest = { userId: string; email: string; requestedAt: numbe
 export type ActivityEntry = { id: number; message: string; createdAt: number };
 export type NoteLogEntry = { id: number; displayName: string; note: string; createdAt: number };
 export type RoleLogEntry = { id: number; displayName: string; oldRole: string; newRole: string; createdAt: number };
+export type ErrorLogEntry = { id: number; message: string; createdAt: number };
 
 export type WorkspacePayload = {
   accessState: AccessState;
@@ -23,6 +24,7 @@ export type WorkspacePayload = {
   activity: ActivityEntry[];
   noteLog: NoteLogEntry[];
   roleLog: RoleLogEntry[];
+  errorLog: ErrorLogEntry[];
   roleStatuses: string[];
   boardTitle: string;
   hostConfigurationRequired?: boolean;

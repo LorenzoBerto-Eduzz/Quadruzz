@@ -2,6 +2,7 @@ import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
 import { ensureConfiguredHost, getWorkspacePayload, pendingRequestExpiresAt, requireApproved } from '@/lib/workspace-data';
 import { recordActivity } from '@/lib/activity-log';
+import { recordError } from '@/lib/error-log';
 
 export const dynamic = 'force-dynamic';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -82,8 +83,8 @@ export async function POST(request: Request) {
       throw error;
     }
     if (file && previousKey && previousKey !== key) {
-      try { await getFiles().delete(previousKey); } catch { /* The new image is already authoritative. */ }
+      try { await getFiles().delete(previousKey); } catch (error) { await recordError('Profile image cleanup warning', error); }
     }
     return Response.json(await getWorkspacePayload(user));
-  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Profile setup failed.' }, { status: 400 }); }
+  } catch (error) { await recordError('Profile update', error); return Response.json({ error: 'Profile update failed.' }, { status: 400 }); }
 }

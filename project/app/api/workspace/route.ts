@@ -2,6 +2,7 @@ import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
 import { ensureConfiguredHost, getWorkspacePayload, requireApproved } from '@/lib/workspace-data';
 import { markOnline, markSessionClosed, markSignedOut, recordActivity } from '@/lib/activity-log';
+import { recordError } from '@/lib/error-log';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export async function GET() {
   try {
     await ensureConfiguredHost(user);
     return reply(await getWorkspacePayload(user));
-  } catch (error) { return reply({ error: error instanceof Error ? error.message : 'Workspace unavailable.' }, 503); }
+  } catch (error) { await recordError('Workspace load', error); return reply({ error: 'Workspace unavailable.' }, 503); }
 }
 
 export async function POST(request: Request) {
@@ -65,5 +66,5 @@ export async function POST(request: Request) {
       await recordActivity(`${member.display_name || user.email} deleted their profile`);
     } else return reply({ error: 'Unknown action.' }, 400);
     return reply(await getWorkspacePayload(user));
-  } catch (error) { return reply({ error: error instanceof Error ? error.message : 'Request failed.' }, 400); }
+  } catch (error) { await recordError('Workspace action', error); return reply({ error: 'Request failed.' }, 400); }
 }

@@ -2,6 +2,7 @@ import { getDb } from '@/db';
 import { authenticateExtensionIdentity } from '@/lib/extension-auth';
 import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS, EXTENSION_READER_REFRESH_MS } from '@/lib/extension-activity';
 import { markOnline, markSessionClosed } from '@/lib/activity-log';
+import { recordError } from '@/lib/error-log';
 
 export const dynamic = 'force-dynamic';
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'authorization, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'cache-control': 'no-store, max-age=0' };
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
     for (const member of members) delete member.extensionLastSeen;
     const roleStatuses = (await db.prepare('SELECT label FROM role_statuses ORDER BY label COLLATE NOCASE, key').all<{ label: string }>()).results.map((row) => row.label);
     return reply({ accessState: 'approved', currentUserId: userId, members, roleStatuses });
-  } catch { return reply({ error: 'Quadruzz is temporarily unavailable.' }, 503); }
+  } catch (error) { await recordError('Extension synchronization', error); return reply({ error: 'Quadruzz is temporarily unavailable.' }, 503); }
 }
 
 export async function POST(request: Request) {
@@ -106,5 +107,5 @@ export async function POST(request: Request) {
     }
     await db.batch(updates);
     return reply({ ok: true, actingState, note, noteUpdatedAt });
-  } catch { return reply({ error: 'Update failed.' }, 400); }
+  } catch (error) { await recordError('Extension update', error); return reply({ error: 'Update failed.' }, 400); }
 }

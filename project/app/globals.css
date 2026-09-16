@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-:root { --canvas: #222426; --panel: #191b1d; --ink: #f1f1f1; --muted: #bdbfc1; }
+:root { --canvas: #111416; --panel: #191b1d; --ink: #f1f1f1; --muted: #bdbfc1; }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; margin: 0; }
 body { background: var(--canvas); color: var(--ink); font-family: Arial, Helvetica, sans-serif; }
@@ -71,7 +71,8 @@ button, input { font: inherit; }
 .member-name-editor { min-width: 0; width: 100%; height: auto; margin: 0; border: 0; outline: 1px solid transparent; outline-offset: 2px; border-radius: .2rem; background: transparent; color: var(--ink); padding: 0; font: inherit; }
 .member-name-editor:hover,.member-name-editor:focus { outline-color: rgba(255,255,255,.34); }
 .member-name-editor:disabled { opacity: 1; }
-.remove-member { display: grid; grid-column: 3; width: 1.75rem; height: 1.75rem; place-items: center; justify-self: end; border: 0; border-radius: 50%; background: transparent; color: #ffd2d2; padding: 0; cursor: pointer; }
+.remove-member { display: grid; grid-column: 3; width: 1.75rem; height: 1.75rem; place-items: center; justify-self: end; border: 0; border-radius: 50%; background: transparent; color: #ffd2d2; padding: 0; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.member-list li:hover .remove-member,.member-list li:focus-within .remove-member { opacity: 1; pointer-events: auto; }
 .remove-member:hover { background: rgba(255,255,255,.08); }
 .remove-member svg { width: .9rem; height: .9rem; }
 .remove-member:disabled { opacity: .5; cursor: default; }
@@ -92,12 +93,13 @@ button, input { font: inherit; }
 .sign-out { display: inline-flex; min-height: 2.25rem; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .4rem .65rem; cursor: pointer; text-decoration: none; }
 .sign-out:hover { background: rgba(255,255,255,.07); }
 .settings-extension-actions { display: grid; gap: .65rem; }
-.extension-version-status { display: grid; gap: .3rem; color: var(--muted); font-size: .78rem; }
+.extension-version-status { display: grid; width: calc(100% - 1rem); gap: .2rem; margin-inline: .5rem; color: var(--muted); font-size: .78rem; }
 .extension-version-status span { display: flex; justify-content: space-between; gap: .75rem; }
 .extension-version-status strong { color: var(--ink); font-weight: 500; }
 .settings-extension-action { display: grid; min-height: 2.4rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; background: transparent; color: var(--ink); padding: .45rem .65rem; cursor: pointer; text-align: center; text-decoration: none; }
 .settings-extension-action:hover { background: rgba(255,255,255,.07); }
 .settings-extension-action:disabled { opacity: .5; cursor: default; }
+.settings-extension-action:disabled { font-size: .78rem; }
 .sign-out:disabled { opacity: .5; cursor: default; }
 .extension-upload-control { display: grid; gap: .4rem; }
 .extension-upload-control label { display: grid; min-height: 2.4rem; place-items: center; border: 1px solid rgba(255,255,255,.22); border-radius: .45rem; padding: .45rem .65rem; cursor: pointer; }

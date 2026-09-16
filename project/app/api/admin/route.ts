@@ -3,6 +3,7 @@ import { getDb, getFiles } from '@/db';
 import { getWorkspacePayload, requireApproved } from '@/lib/workspace-data';
 import type { Role } from '@/lib/workspace-types';
 import { recordActivity } from '@/lib/activity-log';
+import { recordError } from '@/lib/error-log';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,10 +89,11 @@ export async function POST(request: Request) {
         db.prepare('DELETE FROM role_statuses'),
         db.prepare('DELETE FROM note_log'),
         db.prepare('DELETE FROM role_log'),
+        db.prepare('DELETE FROM error_log'),
         db.prepare('DELETE FROM board_state'),
         db.prepare('DELETE FROM activity_log'),
       ]);
     } else throw new Error('Unknown action.');
     return Response.json(await getWorkspacePayload(user));
-  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Administration failed.' }, { status: 400 }); }
+  } catch (error) { await recordError('Settings administration', error); return Response.json({ error: 'Administration failed.' }, { status: 400 }); }
 }

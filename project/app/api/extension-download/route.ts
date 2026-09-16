@@ -2,6 +2,7 @@ import { getChatGPTUser } from '@/app/chatgpt-auth';
 import { getDb, getFiles } from '@/db';
 import { requireApproved } from '@/lib/workspace-data';
 import { extensionVersionFromZip } from '@/lib/extension-zip';
+import { recordError } from '@/lib/error-log';
 
 export const dynamic = 'force-dynamic';
 const EXTENSION_KEY = 'extension/cross-quadruzz-extension-0.1.0.zip';
@@ -43,5 +44,5 @@ export async function POST(request: Request) {
     await getFiles().put(EXTENSION_KEY, bytes, { httpMetadata: { contentType: 'application/zip', contentDisposition: 'attachment; filename="cross-quadruzz-extension-0.1.0.zip"' } });
     await getDb().prepare("INSERT INTO board_state (key,value,updated_at,updated_by) VALUES ('extension_zip_version',?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by").bind(version, Date.now(), user.userId).run();
     return Response.json({ ok: true, version });
-  } catch (error) { return Response.json({ error: error instanceof Error ? error.message : 'Extension upload failed.' }, { status: 400 }); }
+  } catch (error) { await recordError('Extension ZIP upload', error); return Response.json({ error: 'Extension upload failed.' }, { status: 400 }); }
 }

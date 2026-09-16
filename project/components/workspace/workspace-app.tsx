@@ -55,11 +55,6 @@ async function workspaceApi(init?: RequestInit): Promise<WorkspacePayload> {
   return readPayload(await fetch('/api/workspace', { ...init, cache: 'no-store' }), 'Something went wrong.');
 }
 
-function visibleError(cause: unknown, fallback: string): string {
-  const message = cause instanceof Error ? cause.message : fallback;
-  return /D1_ERROR|overloaded|queued for too long|database/i.test(message) ? fallback : message;
-}
-
 async function adminApi(action: string, extra: Record<string, unknown> = {}): Promise<WorkspacePayload> {
   return readPayload(await fetch('/api/admin', {
     method: 'POST',
@@ -108,7 +103,7 @@ function activityTime(createdAt: number): string {
 export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { initialData: WorkspacePayload; extensionAuthorizeUrl?: string | null }) {
   const [data, setData] = useState<WorkspacePayload>(initialData);
   const [peopleReady, setPeopleReady] = useState(initialData.accessState !== 'approved' || !initialData.members.length);
-  const [error, setError] = useState('');
+  const [, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -139,7 +134,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     try {
       const next = await prepareWorkspacePayload(await adminApi(action, { userId }));
       if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(visibleError(cause, 'Request decision failed. Please try again.')); }
+    } catch { setError(''); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -150,7 +145,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     try {
       const next = await prepareWorkspacePayload(await adminApi('remove_member', { userId }));
       if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(visibleError(cause, 'Member removal failed. Please try again.')); }
+    } catch { setError(''); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -161,7 +156,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
     try {
       const next = await prepareWorkspacePayload(await adminApi('delete_role_status', { roleStatus }));
       if (requestEpoch.current === epoch) setData(next);
-    } catch (cause) { setError(visibleError(cause, 'Role status removal failed. Please try again.')); }
+    } catch { setError(''); }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -174,7 +169,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       if (!response.ok) throw new Error(result.error || 'Extension upload failed.');
       if (result.version) setData((current) => ({ ...current, availableExtensionVersion: result.version }));
       setExtensionUploadMessage(`Download ZIP updated${result.version ? ` to ${result.version}` : ''}.`);
-    } catch (cause) { setExtensionUploadMessage(visibleError(cause, 'Extension upload failed.')); }
+    } catch { setExtensionUploadMessage(''); }
     finally { setExtensionUploadBusy(false); }
   }, []);
 
@@ -201,7 +196,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       if (requestEpoch.current === epoch) setData(next);
       if (payload.accessState === 'pending') window.postMessage({ type: 'quadruzz-access-requested' }, window.location.origin);
       return true;
-    } catch (cause) { setError(visibleError(cause, 'Profile setup failed. Please try again.')); return false; }
+    } catch { setError(''); return false; }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
   }, []);
 
@@ -225,8 +220,8 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       const next = await prepareWorkspacePayload(await workspaceApi({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'update_profile', displayName }) }));
       if (requestEpoch.current === epoch) setData(next);
       return true;
-    } catch (cause) {
-      setError(visibleError(cause, 'Profile update failed. Please try again.'));
+    } catch {
+      setError('');
       void refresh();
       return false;
     } finally { if (requestEpoch.current === epoch) setBusy(false); }
@@ -277,7 +272,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
   }, [settingsOpen]);
 
   if (data.accessState === 'not_requested' || data.accessState === 'rejected' || data.accessState === 'pending' || data.accessState === 'onboarding') {
-    return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} error={error} extensionAuthorizeUrl={extensionAuthorizeUrl} />;
+    return <ProfileSetup data={data} finishProfile={finishProfile} busy={busy} extensionAuthorizeUrl={extensionAuthorizeUrl} />;
   }
 
   return (
@@ -291,7 +286,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       {settingsOpen && (
         <dialog ref={settingsRef} className="settings-popup" aria-label="Quadruzz settings" open>
           <div className="members-heading">
-            <h3 className="members-title">Members</h3>
+            <h3 className="members-title">Configs</h3>
             <button className="settings-close" type="button" aria-label="Close settings" title="Close" onClick={() => setSettingsOpen(false)}><X aria-hidden="true" /></button>
           </div>
 
@@ -318,7 +313,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
             ))}
           </ul>
           <div className="settings-divider" />
-          <button className="activity-toggle" type="button" aria-expanded={roleStatusesOpen} onClick={() => setRoleStatusesOpen((open) => !open)}>Role Statuses</button>
+          <button className="activity-toggle" type="button" aria-expanded={roleStatusesOpen} onClick={() => setRoleStatusesOpen((open) => !open)}>Roles</button>
           {roleStatusesOpen && (
             <section className="role-status-panel" aria-label="Role statuses">
               {data.roleStatuses.length ? (
@@ -369,16 +364,21 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
                     ))}
                   </ul>
                 ) : <p className="activity-empty">No status activity yet</p>)}
-                {logTab === 'errors' && <p className="activity-empty">No errors recorded</p>}
+                {logTab === 'errors' && (data.errorLog.length ? (
+                  <ul className="activity-list">
+                    {data.errorLog.map((entry) => (
+                      <li key={entry.id}><span>{entry.message}</span><time dateTime={new Date(entry.createdAt).toISOString()}>{activityTime(entry.createdAt)}</time></li>
+                    ))}
+                  </ul>
+                ) : <p className="activity-empty">No errors recorded</p>)}
               </div>
             </section>
           )}
-          {error && <p className="plain-error">{error}</p>}
           <div className="settings-divider" />
           <div className="settings-extension-actions" aria-label="Get the Quadruzz extension">
             <div className="extension-version-status">
               <span>Installed version <strong>{data.installedExtensionVersion || 'Not detected'}</strong></span>
-              <span>Available ZIP version <strong>{data.availableExtensionVersion || '0.1.0'}</strong></span>
+              <span>Available version <strong>{data.availableExtensionVersion || '0.1.0'}</strong></span>
             </div>
             {CHROME_STORE_URL
               ? <a className="settings-extension-action" href={CHROME_STORE_URL}>Install through Chrome Store</a>
@@ -394,6 +394,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
               </div>
             )}
           </div>
+          <div className="settings-divider" />
           <button className="sign-out" type="button" disabled={busy} onClick={() => void signOut()}>Sign out</button>
         </dialog>
       )}
@@ -416,7 +417,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
   );
 }
 
-function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File | null, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; error: string; extensionAuthorizeUrl: string | null }) {
+function ProfileSetup({ data, finishProfile, busy, extensionAuthorizeUrl }: { data: WorkspacePayload; finishProfile: (displayName: string, image: File | null, preparedImage?: Promise<LocalProfileImage | null>) => Promise<boolean>; busy: boolean; extensionAuthorizeUrl: string | null }) {
   const pending = data.accessState === 'pending';
   const [optimisticPending, setOptimisticPending] = useState(false);
   const hostOnboarding = data.accessState === 'onboarding' && data.currentUser?.role === 'host';
@@ -464,7 +465,7 @@ function ProfileSetup({ data, finishProfile, busy, error, extensionAuthorizeUrl 
           <input aria-label="Display name" value={name} maxLength={48} placeholder="Display name" required onChange={(event) => setName(event.target.value)} onBlur={() => { if (pending && name.trim() && name.trim() !== data.currentUser?.displayName) void finishProfile(name, null); }} />
         </div>
         <button className="plain-action" disabled={busy || waiting} type="submit">{buttonLabel}</button>
-        {(localError || error) && <span className="plain-error">{localError || error}</span>}
+        {localError && <span className="plain-error">{localError}</span>}
       </form>
     </main>
   );

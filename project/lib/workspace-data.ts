@@ -2,7 +2,8 @@ import { getDb, getFiles, configuredHostUserId } from '@/db';
 import type { ChatGPTUser } from '@/app/chatgpt-auth';
 import { listActivity } from '@/lib/activity-log';
 import { expireStaleExtensionSessions, EXTENSION_ACTIVE_AFTER_MS } from '@/lib/extension-activity';
-import type { NoteLogEntry, PendingRequest, PublicMember, Role, RoleLogEntry, WorkspacePayload } from '@/lib/workspace-types';
+import { recordError } from '@/lib/error-log';
+import type { ErrorLogEntry, NoteLogEntry, PendingRequest, PublicMember, Role, RoleLogEntry, WorkspacePayload } from '@/lib/workspace-types';
 
 const REQUEST_TTL_MS = 24 * 60 * 60_000;
 let nextExpiredRequestCleanupAt = 0;
@@ -30,7 +31,7 @@ async function cleanupExpiredRequests(now: number): Promise<void> {
   const expired = (await db.prepare("SELECT profile_image_key FROM access_requests WHERE status='pending' AND expires_at IS NOT NULL AND expires_at<=?").bind(now).all<{profile_image_key: string | null}>()).results;
   const keys = expired.flatMap((row) => row.profile_image_key ? [row.profile_image_key] : []);
   if (keys.length) {
-    try { await getFiles().delete(keys); } catch { return; }
+    try { await getFiles().delete(keys); } catch (error) { await recordError('Expired profile cleanup warning', error); return; }
   }
   await db.prepare("DELETE FROM access_requests WHERE status='pending' AND expires_at IS NOT NULL AND expires_at<=?").bind(now).run();
 }
@@ -66,7 +67,7 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   await cleanupExpiredRequests(now);
   const db = getDb();
   const member = await db.prepare('SELECT * FROM members WHERE user_id = ?').bind(user.userId).first<MemberRow>();
-  const base = { currentUser: { userId: user.userId, email: user.email }, members: [], requests: [], activity: [], noteLog: [], roleLog: [], roleStatuses: [], boardTitle: 'Cross-Quadruzz', installedExtensionVersion: null, availableExtensionVersion: '0.1.0' };
+  const base = { currentUser: { userId: user.userId, email: user.email }, members: [], requests: [], activity: [], noteLog: [], roleLog: [], errorLog: [], roleStatuses: [], boardTitle: 'Cross-Quadruzz', installedExtensionVersion: null, availableExtensionVersion: '0.1.0' };
   if (!member || member.status !== 'approved') {
     const request = await db.prepare("SELECT status,display_name,profile_image_key,expires_at FROM access_requests WHERE user_id=? AND status='pending' AND display_name IS NOT NULL AND profile_image_key IS NOT NULL AND expires_at>?").bind(user.userId, now).first<RequestRow>();
     if (request) return { ...base, accessState: 'pending', currentUser: { ...base.currentUser, displayName: request.display_name, imageUrl: `/api/profile-image?pending=1&v=${request.expires_at || now}`, pendingImageReceived: Boolean(request.profile_image_key) }, hostConfigurationRequired: !configuredHostUserId() };
@@ -86,8 +87,9 @@ export async function getWorkspacePayload(user: ChatGPTUser): Promise<WorkspaceP
   const activity = await listActivity();
   const noteLog = (await db.prepare('SELECT id,display_name AS displayName,note,created_at AS createdAt FROM note_log ORDER BY created_at DESC,id DESC LIMIT 100').all<NoteLogEntry>()).results;
   const roleLog = (await db.prepare('SELECT id,display_name AS displayName,old_role AS oldRole,new_role AS newRole,created_at AS createdAt FROM role_log ORDER BY created_at DESC,id DESC LIMIT 100').all<RoleLogEntry>()).results;
+  const errorLog = (await db.prepare('SELECT id,message,created_at AS createdAt FROM error_log ORDER BY created_at DESC,id DESC LIMIT 100').all<ErrorLogEntry>()).results;
   const roleStatuses = (await db.prepare('SELECT label FROM role_statuses ORDER BY label COLLATE NOCASE, key').all<{ label: string }>()).results.map((row) => row.label);
-  return { accessState: 'approved', currentUser, members, requests, activity, noteLog, roleLog, roleStatuses, boardTitle: board?.value || 'Cross-Quadruzz', extensionEverSeen: Boolean(extensionHistory), installedExtensionVersion: installedExtension?.version || null, availableExtensionVersion: availableExtension?.value || '0.1.0' };
+  return { accessState: 'approved', currentUser, members, requests, activity, noteLog, roleLog, errorLog, roleStatuses, boardTitle: board?.value || 'Cross-Quadruzz', extensionEverSeen: Boolean(extensionHistory), installedExtensionVersion: installedExtension?.version || null, availableExtensionVersion: availableExtension?.value || '0.1.0' };
 }
 
 export async function requireApproved(userId: string): Promise<MemberRow> {
