@@ -6,6 +6,7 @@ const ACTION_POPUP = 'popup.html';
 const ACTION_NOTIFICATION_KEY = 'actionPopupNotification';
 const ACTIVE_NOTIFICATIONS_KEY = 'activeNoteNotifications';
 const UNREAD_NOTES_KEY = 'unreadNoteKeys';
+const DISPLAYED_NOTES_KEY = 'displayedNoteVersions';
 const ACCESS_CACHE_MS = 3000;
 const seenNoteNotifications = new Map();
 const pendingActionNotifications = new Map();
@@ -427,7 +428,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'quadruzz-central-snapshot' && message.data?.accessState === 'approved') void chrome.storage.session.set({ cachedMemberSnapshot: message.data });
   if (message?.type === 'quadruzz-central-note') void deliverNoteNotification(message.notification);
   if (message?.type === 'quadruzz-central-unauthorized' || message?.type === 'quadruzz-account-changing') {
-    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt', 'profileImageCache', UNREAD_NOTES_KEY]).then(async () => {
+    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt', 'profileImageCache', UNREAD_NOTES_KEY, DISPLAYED_NOTES_KEY]).then(async () => {
       await chrome.storage.session.remove('cachedMemberSnapshot');
       cachedAccessState = 'none';
       cachedAccessAt = Date.now();
@@ -436,7 +437,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     });
   }
   if (message?.type === 'quadruzz-access-requested') void ensureAccessCredential().catch(() => broadcast('quadruzz-access-pending'));
-  if (message?.type === 'quadruzz-membership-lost') void chrome.storage.local.remove(['profileImageCache', UNREAD_NOTES_KEY]).then(() => setUnreadBadge(false));
+  if (message?.type === 'quadruzz-membership-lost') void chrome.storage.local.remove(['profileImageCache', UNREAD_NOTES_KEY, DISPLAYED_NOTES_KEY]).then(() => setUnreadBadge(false));
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
   if (message?.type === 'quadruzz-shortcuts') void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 });

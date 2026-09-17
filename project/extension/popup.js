@@ -63,7 +63,16 @@ function notificationMarkup(){if(!notifications.length)return'';return `<div cla
 function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?46:34),0)+(notifications.length-1)*2}
 async function loadDisplayedNoteVersions(){
   if(displayedNoteVersions)return displayedNoteVersions;
-  if(!displayedNoteVersionsPromise)displayedNoteVersionsPromise=chrome.storage.session.get(DISPLAYED_NOTES_KEY).then(stored=>stored[DISPLAYED_NOTES_KEY]||{}).catch(()=>({}));
+  if(!displayedNoteVersionsPromise)displayedNoteVersionsPromise=(async()=>{
+    try{
+      const local=await chrome.storage.local.get(DISPLAYED_NOTES_KEY);
+      if(local[DISPLAYED_NOTES_KEY])return local[DISPLAYED_NOTES_KEY];
+      const previous=await chrome.storage.session.get(DISPLAYED_NOTES_KEY);
+      const migrated=previous[DISPLAYED_NOTES_KEY]||{};
+      if(Object.keys(migrated).length)await chrome.storage.local.set({[DISPLAYED_NOTES_KEY]:migrated});
+      return migrated;
+    }catch{return{}}
+  })();
   displayedNoteVersions=await displayedNoteVersionsPromise;
   return displayedNoteVersions;
 }
@@ -72,12 +81,15 @@ function flagFreshNote(userId){
   animatedFreshNoteUsers.delete(userId);
   const previous=freshNoteTimers.get(userId);
   if(previous)clearTimeout(previous);
-  freshNoteTimers.set(userId,setTimeout(()=>{
-    freshNoteUsers.delete(userId);
-    animatedFreshNoteUsers.delete(userId);
-    freshNoteTimers.delete(userId);
-    document.querySelectorAll('.note-fresh').forEach(element=>{if(element.dataset.noteUser===userId){element.classList.remove('note-fresh');element.removeAttribute('data-note-fresh')}});
-  },1800));
+  freshNoteTimers.delete(userId);
+}
+function finishFreshNote(userId){
+  const timer=freshNoteTimers.get(userId);
+  if(timer)clearTimeout(timer);
+  freshNoteUsers.delete(userId);
+  animatedFreshNoteUsers.delete(userId);
+  freshNoteTimers.delete(userId);
+  document.querySelectorAll('.note-fresh').forEach(element=>{if(element.dataset.noteUser===userId){element.classList.remove('note-fresh');element.removeAttribute('data-note-fresh')}});
 }
 function startFreshNoteAnimations(){
   document.querySelectorAll('[data-note-fresh="true"]').forEach(element=>{
@@ -85,6 +97,8 @@ function startFreshNoteAnimations(){
     if(!userId||animatedFreshNoteUsers.has(userId))return;
     animatedFreshNoteUsers.add(userId);
     element.classList.add('note-fresh');
+    element.addEventListener('animationend',()=>finishFreshNote(userId),{once:true});
+    freshNoteTimers.set(userId,setTimeout(()=>finishFreshNote(userId),2000));
   });
 }
 async function markFreshNotes(data){
@@ -98,13 +112,13 @@ async function markFreshNotes(data){
     if(member.note&&version&&Number(displayed[member.userId]||0)!==version){flagFreshNote(member.userId);changed=true}
     if(Number(displayed[member.userId]||0)!==version){displayed[member.userId]=version;storageChanged=true}
   }
-  if(storageChanged)void chrome.storage.session.set({[DISPLAYED_NOTES_KEY]:displayed});
+  if(storageChanged)void chrome.storage.local.set({[DISPLAYED_NOTES_KEY]:displayed});
   return changed;
 }
 function receiveVisibleMemberNote(notification){
   if(!notification?.userId||!notification.note)return;
   flagFreshNote(notification.userId);
-  void loadDisplayedNoteVersions().then(displayed=>{displayed[notification.userId]=Number(notification.noteUpdatedAt||0);return chrome.storage.session.set({[DISPLAYED_NOTES_KEY]:displayed})});
+  void loadDisplayedNoteVersions().then(displayed=>{displayed[notification.userId]=Number(notification.noteUpdatedAt||0);return chrome.storage.local.set({[DISPLAYED_NOTES_KEY]:displayed})});
   const member=latestData?.members.find(item=>item.userId===notification.userId);
   if(member){member.note=notification.note;member.noteUpdatedAt=notification.noteUpdatedAt;member.actingState=notification.actingState;renderMembers()}
   void loadMembers(false);
