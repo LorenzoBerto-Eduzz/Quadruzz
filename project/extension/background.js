@@ -97,8 +97,8 @@ async function clearTransientNotifications(closePopup = true) {
 async function toggleMemberPopup(tab) {
   await clearUnreadNotes();
   if (actionPopupPort && actionPopupVisible) {
-    if (actionPopupMode === 'notification') {
-      await clearTransientNotifications(false);
+    if (actionPopupMode !== 'popup') {
+      if (actionPopupMode === 'notification') await clearTransientNotifications(false);
       try { actionPopupPort.postMessage({ type: 'quadruzz-action-replace', panel: 'popup' }); }
       catch { actionPopupPort = null; actionPopupVisible = false; actionPopupMode = 'popup'; }
       return;
