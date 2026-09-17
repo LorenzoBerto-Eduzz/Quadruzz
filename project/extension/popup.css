@@ -12,3 +12,5 @@ header{justify-content:flex-end;gap:6px}#open-hq-home svg{width:11px;height:11px
 .member.has-note .role-label{transform:translateY(-1px)}
 .member.has-note:not(.two-line-note) .name,.member.has-note:not(.two-line-note) .state{transform:translateY(0)}
 .member.has-note:not(.two-line-note) .note-label:not(.two-lines){bottom:7px}
+/* Role values are left-to-right so leading emoji stay at the start of the saved text. */
+.role-label,.role-picker .role-option,.notification-role{direction:ltr}
