@@ -5,42 +5,23 @@ const OFFSCREEN_URL = 'offscreen.html';
 const ACTION_POPUP = 'popup.html';
 const ACTION_NOTIFICATION_KEY = 'actionPopupNotification';
 const ACTIVE_NOTIFICATIONS_KEY = 'activeNoteNotifications';
-const ACTIVE_NOTIFICATION_TAB_KEY = 'activeNoteNotificationTabId';
+const UNREAD_NOTES_KEY = 'unreadNoteKeys';
+const ACCESS_CACHE_MS = 3000;
 const seenNoteNotifications = new Map();
+const pendingActionNotifications = new Map();
 let actionPopupPort = null;
 let actionPopupVisible = false;
 let actionPopupMode = 'popup';
 let actionNotificationSequence = 0;
-const pendingActionNotifications = new Map();
 let cachedAccessState = 'unknown';
 let cachedAccessAt = 0;
-const ACCESS_CACHE_MS = 3000;
 let connectionOpening = null;
-let overlayOperation = Promise.resolve();
-function queueOverlay(operation) { overlayOperation = overlayOperation.then(operation, operation); return overlayOperation; }
-
-function isInjectableTab(tab) { return Boolean(tab?.id && /^https?:\/\//i.test(tab.url || '')); }
-
-async function tell(tabId, type, mode, panel = null, allowInjection = true) {
-  if (!tabId) return false;
-  const message = { type, mode, panel };
-  try { await chrome.tabs.sendMessage(tabId, message); return true; }
-  catch {
-    if (!allowInjection) return false;
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (!isInjectableTab(tab)) return false;
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] });
-      await chrome.tabs.sendMessage(tabId, message);
-      return true;
-    } catch { return false; }
-  }
-}
-async function broadcast(type) {
-  try { await chrome.runtime.sendMessage({ type }); } catch { /* No visible overlay is listening. */ }
-}
-
+let popupOperation = Promise.resolve();
 let offscreenCreating = null;
+
+function queuePopup(operation) { popupOperation = popupOperation.then(operation, operation); return popupOperation; }
+async function broadcast(type) { try { await chrome.runtime.sendMessage({ type }); } catch { /* No popup is listening. */ } }
+
 async function ensureOffscreen() {
   if (offscreenCreating) return offscreenCreating;
   offscreenCreating = (async () => {
@@ -53,77 +34,110 @@ async function ensureOffscreen() {
       justification: 'Maintain one centralized worker for team presence and note notifications while Chrome is open.',
     });
   })();
-  try { await offscreenCreating; } catch { /* Startup and alarm events retry creation. */ }
+  try { await offscreenCreating; } catch { /* Startup and alarms retry creation. */ }
   finally { offscreenCreating = null; }
 }
 
 async function sendOffscreenToken() {
   const { token = null } = await chrome.storage.local.get('token');
   try { await chrome.runtime.sendMessage({ type: 'quadruzz-offscreen-token', token }); }
-  catch { /* The offscreen document requests the current token when it starts. */ }
+  catch { /* The worker requests the token when it starts. */ }
 }
 
-async function configureActionPopup(tab) {
-  if (!tab?.id) return;
-  try {
-    await chrome.action.enable(tab.id);
-    await chrome.action.setPopup({ tabId: tab.id, popup: isInjectableTab(tab) ? '' : ACTION_POPUP });
-  }
-  catch { /* Tabs may close while their action state is being configured. */ }
+async function setUnreadBadge(visible) {
+  await chrome.action.setBadgeBackgroundColor({ color: '#1687ff' });
+  if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: '#ffffff' }).catch(() => {});
+  await chrome.action.setBadgeText({ text: visible ? '•' : '' });
+  await chrome.action.setTitle({ title: visible ? 'Cross-Quadruzz — new note' : 'Toggle Cross-Quadruzz' });
 }
-async function configureOpenActionPopups() {
-  const tabs = await chrome.tabs.query({});
-  await Promise.all(tabs.map(configureActionPopup));
+
+async function rememberUnreadNote(notification) {
+  const key = `${notification.userId}:${notification.noteUpdatedAt}`;
+  const stored = await chrome.storage.local.get(UNREAD_NOTES_KEY);
+  const unread = stored[UNREAD_NOTES_KEY] || {};
+  unread[key] = Date.now();
+  await chrome.storage.local.set({ [UNREAD_NOTES_KEY]: unread });
+  await setUnreadBadge(true);
 }
+
+async function clearUnreadNotes() {
+  await chrome.storage.local.remove(UNREAD_NOTES_KEY);
+  await setUnreadBadge(false);
+}
+
+async function restoreUnreadBadge() {
+  const stored = await chrome.storage.local.get(UNREAD_NOTES_KEY);
+  await setUnreadBadge(Boolean(Object.keys(stored[UNREAD_NOTES_KEY] || {}).length));
+}
+
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return tab || null;
+}
+
 async function openActionPopup(tab, panel = 'popup') {
-  if (!tab?.id) return false;
-  const targetWindow = tab.windowId ? await chrome.windows.get(tab.windowId).catch(() => null) : null;
+  if (!tab?.id || !tab.windowId) return false;
+  const targetWindow = await chrome.windows.get(tab.windowId).catch(() => null);
   if (!targetWindow?.focused) return false;
-  const state = await getState();
-  if (state.mode !== 'hidden') {
-    await tell(state.activeTabId, 'quadruzz-hide');
-    await chrome.storage.session.set({ overlayMode: 'hidden', activeTabId: null });
-  }
-  await chrome.action.setPopup({ tabId: tab.id, popup: `popup.html?action=${panel}` });
+  await chrome.action.setPopup({ tabId: tab.id, popup: `${ACTION_POPUP}?action=${panel}` });
   try {
     await chrome.action.openPopup({ windowId: tab.windowId });
     return true;
   } catch { return false; }
   finally { await chrome.action.setPopup({ tabId: tab.id, popup: ACTION_POPUP }); }
 }
-async function toggleForTab(tab) {
-  if (isInjectableTab(tab)) await toggle(tab);
-  else if (actionPopupPort && actionPopupVisible) {
+
+async function clearTransientNotifications(closePopup = true) {
+  await chrome.storage.session.remove([ACTIVE_NOTIFICATIONS_KEY, ACTION_NOTIFICATION_KEY]);
+  if (closePopup && actionPopupVisible && actionPopupMode === 'notification') {
+    try { actionPopupPort?.postMessage({ type: 'quadruzz-action-close' }); } catch { /* Already closed. */ }
+  }
+}
+
+async function toggleMemberPopup(tab) {
+  await clearUnreadNotes();
+  if (actionPopupPort && actionPopupVisible) {
     if (actionPopupMode === 'notification') {
-      await clearNoteNotifications(tab?.id, false);
+      await clearTransientNotifications(false);
       try { actionPopupPort.postMessage({ type: 'quadruzz-action-replace', panel: 'popup' }); }
       catch { actionPopupPort = null; actionPopupVisible = false; actionPopupMode = 'popup'; }
       return;
     }
     try { actionPopupPort.postMessage({ type: 'quadruzz-action-close' }); }
     catch { actionPopupPort = null; actionPopupVisible = false; actionPopupMode = 'popup'; }
-  } else {
-    await clearNoteNotifications(tab?.id, false);
-    await openActionPopup(tab);
+    return;
   }
+  await clearTransientNotifications(false);
+  await openActionPopup(tab, 'popup');
 }
 
-async function getState() {
-  const state = await chrome.storage.session.get(['overlayMode', 'activeTabId']);
-  return { mode: state.overlayMode || 'hidden', activeTabId: state.activeTabId || null };
+async function togglePanel(tab, panel) {
+  let currentAccess = await accessState();
+  if (currentAccess !== 'approved') currentAccess = await accessState(true);
+  if (currentAccess !== 'approved') {
+    await openActionPopup(tab, 'popup');
+    await broadcast(currentAccess === 'pending' ? 'quadruzz-access-pending' : currentAccess === 'uncertain' ? 'quadruzz-access-checking' : 'quadruzz-connect-cancelled');
+    return;
+  }
+  if (actionPopupPort && actionPopupVisible) {
+    if (actionPopupMode === 'notification') {
+      await clearTransientNotifications(false);
+      try { actionPopupPort.postMessage({ type: 'quadruzz-action-replace', panel }); }
+      catch { actionPopupPort = null; actionPopupVisible = false; actionPopupMode = 'popup'; }
+      return;
+    }
+    try { actionPopupPort.postMessage({ type: 'quadruzz-action-panel-toggle', panel }); return; }
+    catch { actionPopupPort = null; actionPopupVisible = false; actionPopupMode = 'popup'; }
+  }
+  await openActionPopup(tab, panel);
 }
-
-async function resetState() { await chrome.storage.session.set({ overlayMode: 'hidden', activeTabId: null }); }
 
 async function sendVisibleActionNotification(notification) {
   const port = actionPopupPort;
   if (!port || !actionPopupVisible) return false;
   const deliveryId = ++actionNotificationSequence;
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      pendingActionNotifications.delete(deliveryId);
-      resolve(false);
-    }, 1000);
+    const timeout = setTimeout(() => { pendingActionNotifications.delete(deliveryId); resolve(false); }, 1000);
     pendingActionNotifications.set(deliveryId, (delivered) => {
       clearTimeout(timeout);
       pendingActionNotifications.delete(deliveryId);
@@ -150,40 +164,26 @@ async function readActiveNoteNotifications() {
 async function rememberActiveNoteNotification(notification) {
   const active = await readActiveNoteNotifications();
   const item = { ...notification, expiresAt: Date.now() + 5000 };
-  const key = item.userId + ':' + item.noteUpdatedAt;
-  const next = active.filter((entry) => entry.userId + ':' + entry.noteUpdatedAt !== key);
+  const key = `${item.userId}:${item.noteUpdatedAt}`;
+  const next = active.filter((entry) => `${entry.userId}:${entry.noteUpdatedAt}` !== key);
   next.unshift(item);
-  await chrome.storage.session.set({ [ACTIVE_NOTIFICATIONS_KEY]: next });
+  await chrome.storage.session.set({ [ACTIVE_NOTIFICATIONS_KEY]: next, [ACTION_NOTIFICATION_KEY]: item });
   return item;
 }
 
-async function showActiveNoteNotifications(tab) {
-  const active = await readActiveNoteNotifications();
-  const stored = await chrome.storage.session.get(ACTIVE_NOTIFICATION_TAB_KEY);
-  const previousTabId = stored[ACTIVE_NOTIFICATION_TAB_KEY];
-  if (!active.length) {
-    await chrome.storage.session.remove([ACTIVE_NOTIFICATION_TAB_KEY, ACTION_NOTIFICATION_KEY]);
-    if (previousTabId) await tell(previousTabId, 'quadruzz-clear-notifications', undefined, null, false);
-    return false;
-  }
-  const overlay = await getState();
-  if (overlay.mode === 'popup' && tab?.id === overlay.activeTabId) {
-    await clearNoteNotifications(tab.id);
-    return false;
-  }
-  if (previousTabId && previousTabId !== tab?.id) await tell(previousTabId, 'quadruzz-clear-notifications', undefined, null, false);
-  await chrome.storage.session.set({ [ACTIVE_NOTIFICATION_TAB_KEY]: tab?.id || null });
-  if (!isInjectableTab(tab)) {
-    await chrome.storage.session.set({ [ACTION_NOTIFICATION_KEY]: active[0] });
-    return openActionPopup(tab, 'notification');
-  }
-  for (const notification of active) await tell(tab.id, 'quadruzz-note-notification', undefined, notification);
-  return true;
+async function showSystemNotification(notification, key) {
+  await chrome.notifications.create(`quadruzz-note-${key}`, {
+    type: 'basic',
+    iconUrl: chrome.runtime.getURL('icon.png'),
+    title: notification.displayName + (notification.actingState ? ` — ${notification.actingState}` : ''),
+    message: notification.note,
+    priority: 2,
+  });
 }
 
 async function deliverNoteNotification(notification) {
   if (!notification?.userId || !notification?.note || !notification?.noteUpdatedAt) return;
-  const key = notification.userId + ':' + notification.noteUpdatedAt;
+  const key = `${notification.userId}:${notification.noteUpdatedAt}`;
   const now = Date.now();
   for (const [seenKey, seenAt] of seenNoteNotifications) if (now - seenAt > 10000) seenNoteNotifications.delete(seenKey);
   if (seenNoteNotifications.has(key)) return;
@@ -194,50 +194,28 @@ async function deliverNoteNotification(notification) {
   persistedSeen[key] = now;
   for (const [storedKey, storedAt] of Object.entries(persistedSeen)) if (now - Number(storedAt) > 10000) delete persistedSeen[storedKey];
   await chrome.storage.session.set({ seenNoteNotificationKeys: persistedSeen });
-  const state = await getState();
-  let tab = null;
-  if (state.mode === 'role' || state.mode === 'note') tab = await chrome.tabs.get(state.activeTabId).catch(() => null);
-  if (!tab) [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  if (state.mode === 'popup' && tab?.id === state.activeTabId && isInjectableTab(tab)) return;
-  if (actionPopupVisible && actionPopupMode !== 'notification' && await sendVisibleActionNotification(notification)) {
-    await chrome.storage.session.remove([ACTIVE_NOTIFICATIONS_KEY, ACTIVE_NOTIFICATION_TAB_KEY, ACTION_NOTIFICATION_KEY]);
+  await rememberUnreadNote(notification);
+
+  if (actionPopupVisible && actionPopupMode === 'popup') {
+    if (await sendVisibleActionNotification(notification)) await clearUnreadNotes();
     return;
   }
-  const activeNotification = await rememberActiveNoteNotification(notification);
-  if (!isInjectableTab(tab)) {
-    if (actionPopupMode === 'notification' && await sendVisibleActionNotification(activeNotification)) {
-      await chrome.storage.session.remove(ACTION_NOTIFICATION_KEY);
-      return;
-    }
-    await chrome.storage.session.set({ [ACTION_NOTIFICATION_KEY]: activeNotification, [ACTIVE_NOTIFICATION_TAB_KEY]: tab?.id || null });
-    const opened = await openActionPopup(tab, 'notification');
-    if (opened) return;
+  if (actionPopupVisible && actionPopupMode === 'notification') {
+    const active = await rememberActiveNoteNotification(notification);
+    if (await sendVisibleActionNotification(active)) return;
   }
-  await chrome.storage.session.set({ [ACTIVE_NOTIFICATION_TAB_KEY]: tab?.id || null });
-  const delivered = await tell(tab?.id, 'quadruzz-note-notification', undefined, activeNotification);
-  if (!delivered) {
-    await chrome.notifications.create('quadruzz-note-' + key, {
-      type: 'basic',
-      iconUrl: chrome.runtime.getURL('icon.png'),
-      title: notification.displayName + (notification.actingState ? ' — ' + notification.actingState : ''),
-      message: notification.note,
-      priority: 2,
-    });
+  if (actionPopupVisible && (actionPopupMode === 'role' || actionPopupMode === 'note')) {
+    await showSystemNotification(notification, key);
+    return;
   }
-}
-async function clearNoteNotifications(tabId, closeAction = true) {
-  const stored = await chrome.storage.session.get(ACTIVE_NOTIFICATION_TAB_KEY);
-  const previousTabId = stored[ACTIVE_NOTIFICATION_TAB_KEY];
-  await chrome.storage.session.remove([ACTIVE_NOTIFICATIONS_KEY, ACTIVE_NOTIFICATION_TAB_KEY, ACTION_NOTIFICATION_KEY]);
-  if (previousTabId) await tell(previousTabId, 'quadruzz-clear-notifications', undefined, null, false);
-  if (tabId && tabId !== previousTabId) await tell(tabId, 'quadruzz-clear-notifications', undefined, null, false);
-  if (closeAction && actionPopupVisible && actionPopupMode === 'notification') {
-    try { actionPopupPort?.postMessage({ type: 'quadruzz-action-close' }); } catch { /* The popup already closed. */ }
-  }
+  const item = await rememberActiveNoteNotification(notification);
+  const tab = await activeTab();
+  if (await openActionPopup(tab, 'notification')) return;
+  await showSystemNotification(item, key);
 }
 
 function connectionCallbackUrl() { return `https://${chrome.runtime.id}.chromiumapp.org/quadruzz`; }
-function connectionAuthorizationUrl() { return BASE + '/extension/authorize?redirect_uri=' + encodeURIComponent(connectionCallbackUrl()); }
+function connectionAuthorizationUrl() { return `${BASE}/extension/authorize?redirect_uri=${encodeURIComponent(connectionCallbackUrl())}`; }
 
 async function openConnectionTab() {
   if (connectionOpening) return connectionOpening;
@@ -263,6 +241,7 @@ async function openConnectionTab() {
   })();
   try { await connectionOpening; } finally { connectionOpening = null; }
 }
+
 async function completeConnection(tabId, url) {
   const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
   if (stored.connectTabId !== tabId || !url.startsWith(connectionCallbackUrl())) return false;
@@ -273,8 +252,8 @@ async function completeConnection(tabId, url) {
     await rememberAccess('approved');
     await startActivityHeartbeat();
   }
-  try { await chrome.tabs.remove(tabId); } catch { /* The connection tab may already be closing. */ }
-  try { await chrome.runtime.sendMessage({ type: token ? 'quadruzz-connect-complete' : 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
+  try { await chrome.tabs.remove(tabId); } catch { /* It may already be closing. */ }
+  try { await chrome.runtime.sendMessage({ type: token ? 'quadruzz-connect-complete' : 'quadruzz-connect-cancelled' }); } catch { /* No popup is listening. */ }
   return true;
 }
 
@@ -295,14 +274,19 @@ async function rememberAccess(state) {
     await chrome.storage.session.set({ cachedAccessState: state, cachedAccessAt });
   }
 }
+
 async function accessState(force = false) {
   if (!force && Date.now() - cachedAccessAt <= ACCESS_CACHE_MS) return cachedAccessState;
   try {
     const cached = await chrome.storage.session.get(['cachedAccessState', 'cachedAccessAt']);
-    if (!force && Date.now() - Number(cached.cachedAccessAt || 0) <= ACCESS_CACHE_MS) { cachedAccessState = cached.cachedAccessState; cachedAccessAt = cached.cachedAccessAt; return cachedAccessState; }
+    if (!force && Date.now() - Number(cached.cachedAccessAt || 0) <= ACCESS_CACHE_MS) {
+      cachedAccessState = cached.cachedAccessState;
+      cachedAccessAt = cached.cachedAccessAt;
+      return cachedAccessState;
+    }
     const stored = await chrome.storage.local.get('token');
     if (!stored.token) { cachedAccessState = 'none'; cachedAccessAt = Date.now(); return 'none'; }
-    const response = await fetch(BASE + '/api/extension', { headers: { authorization: 'Bearer ' + stored.token }, cache: 'no-store' });
+    const response = await fetch(`${BASE}/api/extension`, { headers: { authorization: `Bearer ${stored.token}` }, cache: 'no-store' });
     if (response.status === 401) {
       await chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt', 'profileImageCache']);
       cachedAccessState = 'none'; cachedAccessAt = Date.now(); return 'none';
@@ -315,19 +299,6 @@ async function accessState(force = false) {
   } catch { return 'uncertain'; }
 }
 
-async function applyAccessView(tabId, state) {
-  const overlay = await getState();
-  const targetTabId = tabId || overlay.activeTabId;
-  const message = state === 'pending' ? 'quadruzz-access-pending' : state === 'uncertain' ? 'quadruzz-access-checking' : 'quadruzz-connect-cancelled';
-  if (overlay.mode === 'popup') {
-    await broadcast(message);
-    return;
-  }
-  if (overlay.mode !== 'hidden') {
-    await chrome.storage.session.set({ overlayMode: 'hidden', activeTabId: targetTabId || null });
-    await tell(targetTabId, 'quadruzz-hide');
-  }
-}
 async function synchronizeActivity() {
   try {
     const stored = await chrome.storage.local.get(['token', 'extensionActivitySessionId']);
@@ -340,7 +311,7 @@ async function synchronizeActivity() {
       body: JSON.stringify({ extensionAction: 'heartbeat', extensionSessionId, extensionVersion: chrome.runtime.getManifest().version }),
     });
     if (response.status === 401) await chrome.storage.local.remove(['token', 'profileImageCache']);
-  } catch { /* The next alarm retries transient browser or network failures. */ }
+  } catch { /* The next alarm retries transient failures. */ }
 }
 
 async function startActivityHeartbeat() {
@@ -349,126 +320,54 @@ async function startActivityHeartbeat() {
   catch { await chrome.alarms.create(ACTIVITY_ALARM, { periodInMinutes: 1 }); }
 }
 
-async function toggle(tab) {
-  const state = await getState();
-  const mode = state.mode === 'popup' ? 'hidden' : 'popup';
-  const activeTabId = tab?.id || state.activeTabId;
-  if (mode === 'hidden') {
-    await chrome.storage.session.set({ overlayMode: mode, activeTabId });
-    await tell(activeTabId, 'quadruzz-hide');
-    return;
-  }
-  await chrome.storage.session.set({ overlayMode: mode, activeTabId });
-  await tell(activeTabId, 'quadruzz-show', mode);
-  void clearNoteNotifications(activeTabId);
-  const currentAccess = await accessState();
-  await broadcast(currentAccess === 'approved' ? 'quadruzz-access-approved' : currentAccess === 'pending' ? 'quadruzz-access-pending' : currentAccess === 'uncertain' ? 'quadruzz-access-checking' : 'quadruzz-connect-cancelled');
+async function initializeExtension() {
+  await startActivityHeartbeat();
+  await ensureOffscreen();
+  await restoreUnreadBadge();
 }
 
-async function togglePanel(tab, panel) {
-  const state = await getState();
-  const activeTabId = tab?.id || state.activeTabId;
-  let currentAccess = await accessState();
-  if (currentAccess !== 'approved') currentAccess = await accessState(true);
-  if (currentAccess !== 'approved') {
-    await applyAccessView(activeTabId, currentAccess);
-    return;
-  }
-  await clearNoteNotifications(activeTabId, false);
-  if (!isInjectableTab(tab)) {
-    if (actionPopupPort && actionPopupVisible) {
-      if (actionPopupMode === 'notification') {
-        await chrome.storage.session.remove(ACTION_NOTIFICATION_KEY);
-        try { actionPopupPort.postMessage({ type: 'quadruzz-action-replace', panel }); }
-        catch { actionPopupPort = null; actionPopupVisible = false; actionPopupMode = 'popup'; }
-        return;
-      }
-      try { actionPopupPort.postMessage({ type: 'quadruzz-action-panel-toggle', panel }); return; }
-      catch { actionPopupPort = null; actionPopupVisible = false; actionPopupMode = 'popup'; }
-    }
-    await openActionPopup(tab, panel);
-    return;
-  }
-  if (state.mode === 'popup') {
-    await tell(activeTabId, panel === 'role' ? 'quadruzz-role-toggle-open' : 'quadruzz-note-toggle-open');
-    return;
-  }
-  const mode = state.mode === panel ? 'hidden' : panel;
-  await chrome.storage.session.set({ overlayMode: mode, activeTabId });
-  await tell(activeTabId, mode === 'hidden' ? 'quadruzz-hide' : 'quadruzz-show', mode);
-}
-const toggleRole = (tab) => togglePanel(tab, 'role');
-const toggleNote = (tab) => togglePanel(tab, 'note');
-
-chrome.runtime.onStartup.addListener(() => { void resetState(); void startActivityHeartbeat(); void ensureOffscreen(); });
-chrome.runtime.onInstalled.addListener(() => { void resetState(); void startActivityHeartbeat(); void ensureOffscreen(); });
+chrome.runtime.onStartup.addListener(() => { void initializeExtension(); });
+chrome.runtime.onInstalled.addListener(() => { void initializeExtension(); });
 chrome.alarms.onAlarm.addListener((alarm) => { if (alarm.name === ACTIVITY_ALARM) { void synchronizeActivity(); void ensureOffscreen(); } });
-chrome.action.onClicked.addListener((tab) => {
-  if (!acceptShortcut('quadruzz-toggle')) return;
-  void queueOverlay(() => toggleForTab(tab));
-});
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  const tab = await chrome.tabs.get(tabId).catch(() => null);
-  await configureActionPopup(tab);
-  await showActiveNoteNotifications(tab);
-  const state = await getState();
-  if (!isInjectableTab(tab)) {
-    if (state.mode !== 'hidden') {
-      await tell(state.activeTabId, 'quadruzz-hide');
-      await resetState();
-    }
-    return;
-  }
-  await chrome.storage.session.set({ activeTabId: tabId });
-  if (state.mode === 'hidden') return;
-  await tell(state.activeTabId, 'quadruzz-hide');
-  await tell(tabId, 'quadruzz-show', state.mode);
-});
-chrome.windows.onFocusChanged.addListener(async (windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
-  const [tab] = await chrome.tabs.query({ active: true, windowId });
-  if (await showActiveNoteNotifications(tab)) return;
-  const state = await getState();
-  if (state.mode === 'hidden') return;
-  if (!isInjectableTab(tab) || tab.id === state.activeTabId) return;
-  await chrome.storage.session.set({ activeTabId: tab.id });
-  await tell(state.activeTabId, 'quadruzz-hide');
-  await tell(tab.id, 'quadruzz-show', state.mode);
-});
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.url || changeInfo.status === 'complete') await configureActionPopup(tab);
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const destination = changeInfo.url || tab.url;
-  if (destination && await completeConnection(tabId, destination)) return;
-  const state = await getState();
-  if (tab.active && !isInjectableTab(tab)) {
-    if (state.mode !== 'hidden') {
-      await tell(state.activeTabId, 'quadruzz-hide');
-      await resetState();
-    }
-    return;
-  }
-  if (state.mode !== 'hidden' && tab.active && changeInfo.status === 'complete') await tell(tabId, 'quadruzz-show', state.mode);
+  if (destination) void completeConnection(tabId, destination);
 });
-chrome.tabs.onCreated.addListener((tab) => { void configureActionPopup(tab); });
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   const stored = await chrome.storage.session.get(CONNECT_TAB_KEY);
   if (stored.connectTabId !== tabId) return;
   await chrome.storage.session.remove(CONNECT_TAB_KEY);
-  try { await chrome.runtime.sendMessage({ type: 'quadruzz-connect-cancelled' }); } catch { /* No visible overlay is listening. */ }
+  try { await chrome.runtime.sendMessage({ type: 'quadruzz-connect-cancelled' }); } catch { /* No popup is listening. */ }
 });
+
 let lastShortcutType = '';
 let lastShortcutAt = 0;
-function acceptShortcut(type) { const now = Date.now(); if (type === lastShortcutType && now - lastShortcutAt < 180) return false; lastShortcutType = type; lastShortcutAt = now; return true; }
+function acceptShortcut(type) {
+  const now = Date.now();
+  if (type === lastShortcutType && now - lastShortcutAt < 180) return false;
+  lastShortcutType = type;
+  lastShortcutAt = now;
+  return true;
+}
 
 chrome.commands.onCommand.addListener(async (command) => {
-  if (command !== 'toggle-cross-member-popup-q' && command !== 'toggle-role' && command !== 'toggle-note') return;
-  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!['toggle-cross-member-popup-q', 'toggle-role', 'toggle-note'].includes(command)) return;
   const type = command === 'toggle-cross-member-popup-q' ? 'quadruzz-toggle' : command === 'toggle-role' ? 'quadruzz-role-toggle' : 'quadruzz-note-toggle';
   if (!acceptShortcut(type)) return;
-  await queueOverlay(() => command === 'toggle-cross-member-popup-q' ? toggleForTab(tab) : command === 'toggle-role' ? toggleRole(tab) : toggleNote(tab));
+  const tab = await activeTab();
+  await queuePopup(() => command === 'toggle-cross-member-popup-q' ? toggleMemberPopup(tab) : togglePanel(tab, command === 'toggle-role' ? 'role' : 'note'));
 });
 
-chrome.notifications.onClicked.addListener((notificationId) => { void chrome.notifications.clear(notificationId); void chrome.tabs.create({ url: BASE, active: true }); });
+chrome.notifications.onClicked.addListener((notificationId) => {
+  void queuePopup(async () => {
+    await chrome.notifications.clear(notificationId);
+    const tab = await activeTab();
+    await clearUnreadNotes();
+    await clearTransientNotifications(false);
+    await openActionPopup(tab, 'popup');
+  });
+});
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'quadruzz-action-popup') return;
   actionPopupPort = port;
@@ -479,15 +378,18 @@ chrome.runtime.onConnect.addListener((port) => {
     if (message?.type === 'quadruzz-action-visibility') {
       actionPopupVisible = message.visible === true;
       if (['popup', 'role', 'note', 'notification'].includes(message.mode)) actionPopupMode = message.mode;
-      if (actionPopupVisible && actionPopupMode !== 'notification') void clearNoteNotifications();
+      if (actionPopupVisible && actionPopupMode === 'popup') {
+        void clearUnreadNotes();
+        void clearTransientNotifications(false);
+      }
     }
     if (message?.type === 'quadruzz-action-replace-request' && ['popup', 'role', 'note'].includes(message.panel)) {
-      void clearNoteNotifications(undefined, false).then(() => port.postMessage({ type: 'quadruzz-action-replace', panel: message.panel })).catch(() => {});
+      void clearTransientNotifications(false).then(() => {
+        if (message.panel === 'popup') void clearUnreadNotes();
+        port.postMessage({ type: 'quadruzz-action-replace', panel: message.panel });
+      }).catch(() => {});
     }
-    if (message?.type === 'quadruzz-action-note-rendered') {
-      pendingActionNotifications.get(Number(message.deliveryId))?.(true);
-      if (actionPopupMode !== 'notification') void chrome.storage.session.remove([ACTIVE_NOTIFICATIONS_KEY, ACTIVE_NOTIFICATION_TAB_KEY, ACTION_NOTIFICATION_KEY]);
-    }
+    if (message?.type === 'quadruzz-action-note-rendered') pendingActionNotifications.get(Number(message.deliveryId))?.(true);
   });
   port.onDisconnect.addListener(() => {
     if (actionPopupPort !== port) return;
@@ -498,19 +400,19 @@ chrome.runtime.onConnect.addListener((port) => {
     pendingActionNotifications.clear();
   });
 });
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.token) void ensureOffscreen().then(sendOffscreenToken);
 });
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'quadruzz-offscreen-token-request') {
     void chrome.storage.local.get('token').then(({ token = null }) => sendResponse({ token }));
     return true;
   }
   if (message?.type === 'quadruzz-open-hq') void chrome.tabs.create({ url: BASE, active: true });
   if (message?.type === 'quadruzz-connect') {
-    void openConnectionTab()
-      .then(() => sendResponse({ ok: true }))
-      .catch(async () => { await broadcast('quadruzz-connect-cancelled'); sendResponse({ ok: false }); });
+    void openConnectionTab().then(() => sendResponse({ ok: true })).catch(async () => { await broadcast('quadruzz-connect-cancelled'); sendResponse({ ok: false }); });
     return true;
   }
   if (message?.type === 'quadruzz-connect-state') {
@@ -524,31 +426,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === 'quadruzz-central-snapshot' && message.data?.accessState === 'approved') void chrome.storage.session.set({ cachedMemberSnapshot: message.data });
   if (message?.type === 'quadruzz-central-note') void deliverNoteNotification(message.notification);
-  if (message?.type === 'quadruzz-central-unauthorized') void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt', 'profileImageCache']).then(async () => { await chrome.storage.session.remove('cachedMemberSnapshot'); await rememberAccess('none'); await applyAccessView(undefined, 'none'); });
-  if (message?.type === 'quadruzz-account-changing') {
-    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt', 'profileImageCache']).then(() => { cachedAccessState = 'none'; cachedAccessAt = Date.now(); return broadcast('quadruzz-connect-cancelled'); });
+  if (message?.type === 'quadruzz-central-unauthorized' || message?.type === 'quadruzz-account-changing') {
+    void chrome.storage.local.remove(['token', 'extensionActivitySessionId', 'extensionActivityPulseAt', 'profileImageCache', UNREAD_NOTES_KEY]).then(async () => {
+      await chrome.storage.session.remove('cachedMemberSnapshot');
+      cachedAccessState = 'none';
+      cachedAccessAt = Date.now();
+      await setUnreadBadge(false);
+      await broadcast('quadruzz-connect-cancelled');
+    });
   }
   if (message?.type === 'quadruzz-access-requested') void ensureAccessCredential().catch(() => broadcast('quadruzz-access-pending'));
-  if (message?.type === 'quadruzz-membership-lost') void chrome.storage.local.remove('profileImageCache').then(() => applyAccessView(sender.tab?.id, 'none'));
+  if (message?.type === 'quadruzz-membership-lost') void chrome.storage.local.remove(['profileImageCache', UNREAD_NOTES_KEY]).then(() => setUnreadBadge(false));
   if (message?.type === 'quadruzz-authenticated') void synchronizeActivity();
-  if (message?.type === 'quadruzz-toggle' && acceptShortcut(message.type)) void queueOverlay(() => toggleForTab(sender.tab));
-  if (message?.type === 'quadruzz-role-toggle' && acceptShortcut(message.type)) void queueOverlay(() => toggleRole(sender.tab));
-  if (message?.type === 'quadruzz-note-toggle' && acceptShortcut(message.type)) void queueOverlay(() => toggleNote(sender.tab));
-  if (message?.type === 'quadruzz-force-popup') {
-    void queueOverlay(async () => {
-      await chrome.storage.session.set({ overlayMode: 'popup', activeTabId: sender.tab?.id });
-      await tell(sender.tab?.id, 'quadruzz-show', 'popup');
-    });
-  }
-  if (message?.type === 'quadruzz-close') {
-    void queueOverlay(async () => {
-      await chrome.storage.session.set({ overlayMode: 'hidden', activeTabId: null });
-      await tell(sender.tab?.id, 'quadruzz-hide');
-    });
-  }
   if (message?.type === 'quadruzz-shortcuts') void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
 });
 
-void startActivityHeartbeat();
-void ensureOffscreen();
-void configureOpenActionPopups();
+void initializeExtension();

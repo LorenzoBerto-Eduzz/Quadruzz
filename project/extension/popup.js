@@ -1,9 +1,8 @@
 const BASE='https://cross-quadruzz.l-busslerberto.chatgpt.site';
 const app=document.querySelector('#app');
 const requestedActionMode=new URLSearchParams(location.search).get('action');
-const actionPopup=window.top===window;
-const actionMode=actionPopup?(requestedActionMode||'popup'):requestedActionMode;
-const actionPopupPort=actionPopup?chrome.runtime.connect({name:'quadruzz-action-popup'}):null;
+const actionMode=requestedActionMode||'popup';
+const actionPopupPort=chrome.runtime.connect({name:'quadruzz-action-popup'});
 const DISPLAYED_NOTES_KEY='displayedNoteVersions';
 let actionPopupRevealed=false;
 const imageUrls=new Map();
@@ -31,13 +30,9 @@ let appliedAccessSequence=0;
 let lastRenderSignature='';
 let pickerDesiredHeight=0;
 let roleLayoutFrame=null;
-let standaloneRole=false;
-let standaloneNote=false;
 let standaloneNotification=false;
-let pendingPanel=null;
 let overlayVisible=false;
 let selectedRoleIndex=0;
-let presentationId=0;
 let focusRequest=0;
 let notifications=[];
 const notificationTimers=new Map();
@@ -62,7 +57,7 @@ function focusOverlayInput(){
 
 function notificationKey(notification){return `${notification.userId}:${notification.noteUpdatedAt}`}
 function clearNotifications(render=true){notifications=[];for(const timer of notificationTimers.values())clearTimeout(timer);notificationTimers.clear();document.querySelector('.note-notifications')?.remove();if(render&&latestData)renderMembers()}
-function removeNotification(key){notifications=notifications.filter(item=>notificationKey(item)!==key);const timer=notificationTimers.get(key);if(timer)clearTimeout(timer);notificationTimers.delete(key);if(!notifications.length&&!pickerOpen&&!noteOpen&&standaloneNotification){if(actionPopup)window.close();else hideOverlayNow();return}if(latestData)renderMembers()}
+function removeNotification(key){notifications=notifications.filter(item=>notificationKey(item)!==key);const timer=notificationTimers.get(key);if(timer)clearTimeout(timer);notificationTimers.delete(key);if(!notifications.length&&!pickerOpen&&!noteOpen&&standaloneNotification){window.close();return}if(latestData)renderMembers()}
 function addNotification(notification){if(!notification?.note||notification.userId===latestData?.currentUserId)return;const remaining=Math.min(5000,Number(notification.expiresAt||Date.now()+5000)-Date.now());if(remaining<=0)return;const key=notificationKey(notification);notifications=notifications.filter(item=>notificationKey(item)!==key);notifications.unshift(notification);const previous=notificationTimers.get(key);if(previous)clearTimeout(previous);notificationTimers.set(key,setTimeout(()=>removeNotification(key),remaining));if(latestData)renderMembers()}
 function notificationMarkup(){if(!notifications.length)return'';return `<div class="note-notifications">${notifications.map(notification=>{const twoLines=noteUsesTwoLines(notification.note);return `<div class="note-notification${twoLines?' two-lines':''}"><div class="notification-identity"><span class="notification-name">${esc(notification.displayName)}</span><span class="notification-role">${esc(notification.actingState||'-')}</span></div><div class="notification-note">${esc(notification.note)}</div></div>`}).join('')}</div>`}
 function notificationHeight(){if(!notifications.length)return 0;return notifications.reduce((height,item)=>height+(noteUsesTwoLines(item.note)?46:34),0)+(notifications.length-1)*2}
@@ -114,7 +109,7 @@ function receiveVisibleMemberNote(notification){
   if(member){member.note=notification.note;member.noteUpdatedAt=notification.noteUpdatedAt;member.actingState=notification.actingState;renderMembers()}
   void loadMembers(false);
 }
-document.querySelector('#close').addEventListener('click',()=>{if(actionPopup){window.close();return}try{const sent=chrome.runtime.sendMessage({type:'quadruzz-close'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
+document.querySelector('#close').addEventListener('click',()=>window.close());
 document.querySelector('#open-hq-home').addEventListener('click',()=>{try{const sent=chrome.runtime.sendMessage({type:'quadruzz-open-hq'});if(sent?.catch)sent.catch(()=>{})}catch{/* Context already closed. */}});
 window.addEventListener('keydown',event=>{
   const popupToggle=event.code==='KeyQ'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;
@@ -123,75 +118,23 @@ window.addEventListener('keydown',event=>{
   const noteToggle=event.code==='KeyS'&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey;
   if(event.repeat||(!popupToggle&&!retiredPopupToggle&&!roleToggle&&!noteToggle))return;
   if(retiredPopupToggle){event.preventDefault();event.stopImmediatePropagation();return}
-  if(actionPopup&&actionMode==='notification'){
+  if(actionMode==='notification'){
     event.preventDefault();
     event.stopImmediatePropagation();
     actionPopupPort?.postMessage({type:'quadruzz-action-replace-request',panel:popupToggle?'popup':roleToggle?'role':'note'});
     return
   }
-  if(actionPopup&&popupToggle)return;
+  if(popupToggle)return;
   event.preventDefault();
   event.stopImmediatePropagation();
-  if(actionPopup){
-    if(roleToggle){requestRolePickerToggle();return}
-    if(noteToggle){requestNoteToggle();return}
-  }
-  try{
-    const type=popupToggle?'quadruzz-toggle':roleToggle?'quadruzz-role-toggle':'quadruzz-note-toggle';
-    const sent=chrome.runtime.sendMessage({type});
-    if(sent?.catch)sent.catch(()=>{});
-  }catch{/* Context already closed. */}
+  if(roleToggle){requestRolePickerToggle();return}
+  if(noteToggle)requestNoteToggle();
 },true);chrome.runtime.onMessage.addListener(message=>{if(message?.type==='quadruzz-connect-started'||message?.type==='quadruzz-access-checking'){connectInProgress=true;connectingView()}if(message?.type==='quadruzz-connect-complete'||message?.type==='quadruzz-access-approved'){connectInProgress=false;void loadMembers(false)}if(message?.type==='quadruzz-connect-cancelled'){connectInProgress=false;signInView()}if(message?.type==='quadruzz-access-pending'){connectInProgress=false;waitingView()}});
 function actionPopupIsVisible(){return !document.hidden&&document.hasFocus()}
-function reportActionPopupVisibility(){actionPopupPort?.postMessage({type:'quadruzz-action-visibility',visible:actionPopupIsVisible(),mode:actionMode})}
-if(actionPopupPort){document.addEventListener('visibilitychange',reportActionPopupVisibility);window.addEventListener('focus',reportActionPopupVisibility);window.addEventListener('blur',reportActionPopupVisibility);reportActionPopupVisibility()}
+function currentPopupMode(){if(actionMode==='notification')return'notification';if(noteOpen)return'note';if(pickerOpen)return'role';return'popup'}
+function reportActionPopupVisibility(){actionPopupPort?.postMessage({type:'quadruzz-action-visibility',visible:actionPopupIsVisible(),mode:currentPopupMode()})}
+document.addEventListener('visibilitychange',reportActionPopupVisibility);window.addEventListener('focus',reportActionPopupVisibility);window.addEventListener('blur',reportActionPopupVisibility);
 actionPopupPort?.onMessage.addListener(message=>{if(message?.type==='quadruzz-action-close')window.close();if(message?.type==='quadruzz-action-replace'&&['popup','role','note'].includes(message.panel)){clearNotifications(false);location.replace(`popup.html?action=${message.panel}`);return}if(message?.type==='quadruzz-action-note'&&actionPopupIsVisible()){if(actionMode==='notification')addNotification(message.notification);else receiveVisibleMemberNote(message.notification);actionPopupPort.postMessage({type:'quadruzz-action-note-rendered',deliveryId:message.deliveryId})}if(message?.type==='quadruzz-action-panel-toggle'){if(message.panel==='role')requestRolePickerToggle();if(message.panel==='note')requestNoteToggle()}});
-window.addEventListener('message',event=>{
-  if(event.source!==parent)return;
-  if(event.data?.type==='quadruzz-dismiss-menus'&&pickerOpen){closeRolePicker();return}
-  if(event.data?.type==='quadruzz-role-toggle'){requestRolePickerToggle();return}
-  if(event.data?.type==='quadruzz-note-toggle'){requestNoteToggle();return}
-  if(event.data?.type==='quadruzz-note-notification'){addNotification(event.data.notification);return}
-  if(event.data?.type==='quadruzz-clear-notifications'){clearNotifications(false);return}
-  if(event.data?.type==='quadruzz-reset-panels'){
-    focusRequest+=1;overlayVisible=false;pickerOpen=false;noteOpen=false;standaloneRole=false;standaloneNote=false;standaloneNotification=false;pendingPanel=null;selectedRoleIndex=0;roleFilter='';noteDraft='';noteLastValid='';pickerDesiredHeight=0;
-    clearNotifications(false);
-    document.documentElement.classList.remove('standalone-role','standalone-note','standalone-notification');
-    document.querySelectorAll('.role-picker,.note-editor,.note-notifications').forEach(element=>element.remove());
-    if(latestData)renderMembers();
-    window.parent.postMessage({type:'quadruzz-panels-reset',presentationId:Number(event.data.presentationId||0)},'*');
-    return
-  }
-  if(event.data?.type==='quadruzz-picker-prepared'){const panel=pendingPanel;pendingPanel=null;if(panel==='role'){pickerOpen=true;noteOpen=false;selectedRoleIndex=0;roleFilter=''}else if(panel==='note'){noteOpen=true;pickerOpen=false;noteDraft='';noteLastValid=''}renderMembers();return}
-  if(event.data?.type==='quadruzz-overlay-hidden'){focusRequest+=1;overlayVisible=false;pickerOpen=false;noteOpen=false;standaloneRole=false;standaloneNote=false;standaloneNotification=false;clearNotifications(false);pendingPanel=null;selectedRoleIndex=0;roleFilter='';noteDraft='';noteLastValid='';pickerDesiredHeight=0;document.documentElement.classList.remove('standalone-role','standalone-note','standalone-notification');document.querySelectorAll('.role-picker,.note-editor').forEach(element=>element.remove());return}
-  if(event.data?.type==='quadruzz-presented'){
-    if(Number(event.data.presentationId||0)===presentationId){startFreshNoteAnimations();focusOverlayInput()}
-    return
-  }
-  if(event.data?.type==='quadruzz-overlay-mode'){
-    presentationId=Number(event.data.presentationId||0);
-    overlayVisible=event.data.visible===true;
-    if(!overlayVisible)return;
-    const wasStandaloneRole=standaloneRole;
-    const wasStandaloneNote=standaloneNote;
-    standaloneRole=event.data.mode==='role';
-    standaloneNote=event.data.mode==='note';
-    standaloneNotification=event.data.mode==='notification';
-    document.documentElement.classList.toggle('standalone-role',standaloneRole);
-    document.documentElement.classList.toggle('standalone-note',standaloneNote);
-    document.documentElement.classList.toggle('standalone-notification',standaloneNotification);
-    if(event.data.mode==='popup'){
-      clearNotifications(false);
-      pickerOpen=false;
-      noteOpen=false;
-      roleFilter='';
-      noteDraft='';
-      noteLastValid='';
-    }else if(standaloneRole&&!wasStandaloneRole){pickerOpen=true;noteOpen=false;selectedRoleIndex=0;}
-    else if(standaloneNote&&!wasStandaloneNote){noteOpen=true;pickerOpen=false;noteDraft='';noteLastValid='';}
-    if(latestData){renderMembers();if(event.data.mode==='popup')void markFreshNotes(latestData).then(changed=>{if(changed)renderMembers()})}
-  }
-});
 document.addEventListener('pointerdown',event=>{if(pickerOpen&&!event.target.closest('.role-picker,.role-trigger'))closeRolePicker();if(noteOpen&&!event.target.closest('.note-editor,.note-trigger'))closeNoteEditor()});
 
 function storageCall(method,value){return new Promise((resolve,reject)=>{try{chrome.storage.local[method](value,result=>{try{const failure=chrome.runtime.lastError;if(failure)reject(new Error(failure.message));else resolve(result)}catch(error){reject(error)}})}catch(error){reject(error)}})}
@@ -199,12 +142,12 @@ const storage={get:key=>storageCall('get',key),set:value=>storageCall('set',valu
 function measuredHeight(){const base=document.querySelector('header').offsetHeight+app.scrollHeight;return Math.max(base,pickerDesiredHeight)}
 let sizeReportFrame=0;
 let lastActionPopupHeight=0;
-function reportSize(){const height=measuredHeight();if(actionPopup){const nextHeight=Math.min(545,Math.max(25,height));if(nextHeight!==lastActionPopupHeight){lastActionPopupHeight=nextHeight;document.documentElement.style.height=nextHeight+'px'}return}window.parent.postMessage({type:'quadruzz-resize',height},'*')}
+function reportSize(){const height=measuredHeight();const nextHeight=Math.min(545,Math.max(25,height));if(nextHeight!==lastActionPopupHeight){lastActionPopupHeight=nextHeight;document.documentElement.style.height=nextHeight+'px'}}
 function scheduleSizeReport(){if(sizeReportFrame)return;sizeReportFrame=requestAnimationFrame(()=>{sizeReportFrame=0;reportSize()})}
-function reportReady(){const height=measuredHeight();if(actionPopup){reportSize();if(!actionPopupRevealed){actionPopupRevealed=true;requestAnimationFrame(()=>{document.documentElement.classList.remove('action-popup-pending');requestAnimationFrame(()=>{startFreshNoteAnimations();if(actionMode==='role'||actionMode==='note')focusOverlayInput()})})}else requestAnimationFrame(startFreshNoteAnimations);return}window.parent.postMessage({type:'quadruzz-picker-visibility',visible:pickerOpen||noteOpen},'*');window.parent.postMessage({type:'quadruzz-ready',presentationId,height},'*')}
+function reportReady(){reportSize();if(!actionPopupRevealed){actionPopupRevealed=true;requestAnimationFrame(()=>{document.documentElement.classList.remove('action-popup-pending');requestAnimationFrame(()=>{startFreshNoteAnimations();if(actionMode==='role'||actionMode==='note')focusOverlayInput()})})}else requestAnimationFrame(startFreshNoteAnimations)}
 async function api(path,options={}){const{token}=await storage.get('token');const headers={...options.headers,...(token&&{authorization:`Bearer ${token}`})};const response=await fetch(`${BASE}${path}`,{...options,headers});if(response.status===401)await storage.remove(['token','profileImageCache']);return response}
 async function pulseActivity(){try{const stored=await storage.get(['token','extensionActivitySessionId','extensionActivityPulseAt']);if(!stored.token)return;const now=Date.now();if(now-(stored.extensionActivityPulseAt||0)<15000)return;const extensionSessionId=stored.extensionActivitySessionId||crypto.randomUUID();await storage.set({extensionActivitySessionId,extensionActivityPulseAt:now});const response=await fetch(`${BASE}/api/extension`,{method:'POST',headers:{authorization:`Bearer ${stored.token}`,'content-type':'application/json'},body:JSON.stringify({extensionAction:'heartbeat',extensionSessionId})});if(response.status===401)await storage.remove(['token','extensionActivityPulseAt','profileImageCache']);else if(!response.ok)await storage.remove('extensionActivityPulseAt')}catch(error){if(!stopInvalidContext(error))try{await storage.remove('extensionActivityPulseAt')}catch{/* The next member refresh retries. */}}}
-function requireFullPopup(){if(standaloneRole||standaloneNote)window.parent.postMessage({type:'quadruzz-require-popup'},'*')}
+function requireFullPopup(){}
 function connectingView(){requireFullPopup();if(!document.querySelector('#connect-progress'))app.innerHTML='<div class="connect"><button class="primary" id="connect-progress" disabled>Connecting to Cross…</button></div>';reportReady()}
 function waitingView(){requireFullPopup();if(!document.querySelector('#open-hq')){app.innerHTML='<div class="connect"><button class="primary" id="open-hq">Waiting for approval</button></div>';document.querySelector('#open-hq').addEventListener('click',()=>chrome.runtime.sendMessage({type:'quadruzz-open-hq'}))}reportReady()}
 function signInView(){if(connectInProgress){connectingView();return}requireFullPopup();if(!document.querySelector('#sign-in')){app.innerHTML='<div class="connect"><button class="primary" id="sign-in">Connect to Cross</button></div>';document.querySelector('#sign-in').addEventListener('click',signIn)}reportReady()}
@@ -231,12 +174,10 @@ function noteUsesTwoLines(value){
 function esc(value){const node=document.createElement('span');node.textContent=value??'';return node.innerHTML}
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
-function hideOverlayNow(){window.parent.postMessage({type:'quadruzz-hide-now'},'*')}
-function closeRolePicker(){if(standaloneRole){pickerOpen=false;standaloneRole=false;roleFilter='';document.querySelector('.role-picker')?.remove();hideOverlayNow();return}pickerOpen=false;roleFilter='';renderMembers()}
-function closeNoteEditor(){if(standaloneNote){noteOpen=false;standaloneNote=false;noteDraft='';noteLastValid='';document.querySelector('.note-editor')?.remove();hideOverlayNow();return}noteOpen=false;noteDraft='';noteLastValid='';renderMembers()}
-function preparePanel(panel){pendingPanel=panel;window.parent.postMessage({type:'quadruzz-prepare-picker'},'*')}
-function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}noteOpen=false;selectedRoleIndex=0;roleFilter='';if(standaloneRole||actionPopup){pickerOpen=true;renderMembers();return}preparePanel('role')}
-function requestNoteToggle(){if(noteOpen){closeNoteEditor();return}pickerOpen=false;noteDraft='';noteLastValid='';if(standaloneNote||actionPopup){noteOpen=true;renderMembers();return}preparePanel('note')}
+function closeRolePicker(){pickerOpen=false;roleFilter='';renderMembers();reportActionPopupVisibility()}
+function closeNoteEditor(){noteOpen=false;noteDraft='';noteLastValid='';renderMembers();reportActionPopupVisibility()}
+function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}noteOpen=false;selectedRoleIndex=0;roleFilter='';pickerOpen=true;renderMembers();reportActionPopupVisibility()}
+function requestNoteToggle(){if(noteOpen){closeNoteEditor();return}pickerOpen=false;noteDraft='';noteLastValid='';noteOpen=true;renderMembers();reportActionPopupVisibility()}
 function viewSignature(){return JSON.stringify({members:latestData?.members,roles:latestData?.roleStatuses,images:latestImages,pendingRole,pendingNote,pendingNoteSet})}
 function rolePickerMarkup(){
   const roles=matchingRoles();
@@ -333,11 +274,10 @@ function bindNoteEditor(){
   const previous=self?.note??null;
   const previousUpdatedAt=self?.noteUpdatedAt??null;
   if(self){self.note=note;self.noteUpdatedAt=Date.now();pendingNoteUpdatedAt=self.noteUpdatedAt;}
-  const closingStandalone=standaloneNote;
   noteOpen=false;
   noteDraft='';
   noteLastValid='';
-  if(closingStandalone)hideOverlayNow();else{renderMembers()}
+  renderMembers();
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({note})});
     if(!response.ok)throw new Error();
@@ -390,8 +330,7 @@ function renderMembers(){
     return `<li class="member${member.extensionActive?'':' inactive'}${self?' self':''}${member.note?' has-note':''}${twoLineNote?' two-line-note':''}"><img class="${latestImages[index]?'image-ready':''}" src="${latestImages[index]||''}" alt="">${name}${state}${note}</li>`;
   }).join('');
   app.innerHTML=`<ul class="members">${rows}</ul>`;
-  if(!actionPopup&&overlayVisible)requestAnimationFrame(startFreshNoteAnimations);
-  if(actionPopup&&!actionPopupRevealed)document.documentElement.classList.remove('action-popup-pending');
+  if(!actionPopupRevealed)document.documentElement.classList.remove('action-popup-pending');
   document.body.insertAdjacentHTML('beforeend',notificationMarkup());
 
   layoutRoleLabels();
@@ -413,23 +352,23 @@ function renderMembers(){
   if(pickerOpen&&roleTrigger){
     document.body.insertAdjacentHTML('beforeend',rolePickerMarkup());
     const picker=document.querySelector('.role-picker');
-    const top=standaloneRole?notificationsHeight+(notificationsHeight?2:0):layoutBottom(roleTrigger.closest('.member'))-1;
+    const top=layoutBottom(roleTrigger.closest('.member'))-1;
     picker.style.top=`${top}px`;
     const memberRect=roleTrigger.closest('.member').getBoundingClientRect();
-    picker.style.left=standaloneRole?'0':`${Math.round(memberRect.left+41)}px`;
-    picker.style.right=standaloneRole?'auto':`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right))}px`;
-    picker.style.width=standaloneRole?'100%':'auto';
+    picker.style.left=`${Math.round(memberRect.left+41)}px`;
+    picker.style.right=`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right))}px`;
+    picker.style.width='auto';
     picker.style.maxHeight=`calc(100vh - ${top}px)`;
     pickerDesiredHeight=top+(matchingRoles().length+1)*24;
   }else if(noteOpen&&noteTrigger){
     document.body.insertAdjacentHTML('beforeend',noteEditorMarkup());
     const editor=document.querySelector('.note-editor');
-    const top=standaloneNote?notificationsHeight+(notificationsHeight?2:0):layoutBottom(noteTrigger.closest('.member'))-1;
+    const top=layoutBottom(noteTrigger.closest('.member'))-1;
     editor.style.top=`${top}px`;
     const memberRect=noteTrigger.closest('.member').getBoundingClientRect();
-    editor.style.left=standaloneNote?'0':`${Math.round(memberRect.left+41)}px`;
-    editor.style.right=standaloneNote?'auto':`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right))}px`;
-    editor.style.width=standaloneNote?'100%':'auto';
+    editor.style.left=`${Math.round(memberRect.left+41)}px`;
+    editor.style.right=`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right))}px`;
+    editor.style.width='auto';
     editor.dataset.top=String(top);
     pickerDesiredHeight=top+18;
   }
@@ -447,11 +386,10 @@ async function chooseRole(value,create){
   const self=latestData?.members.find(member=>member.userId===latestData.currentUserId);
   const previous=self?.actingState;
   if(self)self.actingState=label;
-  const closingStandalone=standaloneRole;
   pickerOpen=false;
   noteOpen=false;
   roleFilter='';
-  if(closingStandalone)hideOverlayNow();else{renderMembers()}
+  renderMembers();
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
     if(!response.ok)throw new Error();
@@ -482,7 +420,7 @@ async function loadMembers(forceRender=false){
     try{await chrome.runtime.sendMessage({type:'quadruzz-access-state',state:'approved'})}catch{}
     await pulseActivity();
     data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));
-    if(actionPopup)void chrome.storage.session.set({cachedMemberSnapshot:data});
+    void chrome.storage.session.set({cachedMemberSnapshot:data});
     const images=data.members.map(member=>imageUrls.get(member.userId+':'+member.imageVersion)||'');
     const resolvedImages=Promise.all(data.members.map(member=>memberImage(member,token)));
     if(sequence<appliedLoadSequence)return;
@@ -496,34 +434,32 @@ async function loadMembers(forceRender=false){
       if(!savingNote&&(self?.note??null)===pendingNote){pendingNoteSet=false;pendingNote=null;pendingNoteUpdatedAt=null}
       else if(self){self.note=pendingNote;self.noteUpdatedAt=pendingNoteUpdatedAt;}
     }
-    if(overlayVisible&&!standaloneRole&&!standaloneNote&&!standaloneNotification)await markFreshNotes(data);
+    if(overlayVisible&&actionMode==='popup'&&!standaloneNotification)await markFreshNotes(data);
     latestData=data;
     latestImages=images;
     if(!lastRenderSignature||forceRender||viewSignature()!==lastRenderSignature)renderMembers();
     void resolvedImages.then(nextImages=>{if(sequence<appliedLoadSequence)return;const changed=nextImages.some((image,index)=>image!==latestImages[index]);if(!changed)return;latestImages=nextImages;updateMemberImages(nextImages)}).catch(()=>{});
   }catch(error){if(stopInvalidContext(error))return;reportReady()}
 }
-async function hydrateActionPopup(){if(!actionPopup)return;const stored=await chrome.storage.session.get('cachedMemberSnapshot');const data=stored.cachedMemberSnapshot;if(data?.accessState!=='approved'||!Array.isArray(data.members))return;data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));const cached=await storedImageCache();if(actionMode!=='notification')await markFreshNotes(data);latestData=data;latestImages=data.members.map(member=>cached[`${member.userId}:${member.imageVersion}`]||'');renderMembers()}
-function scheduleRefresh(delay=overlayVisible||actionPopup?250:5000){
+async function hydrateActionPopup(){const stored=await chrome.storage.session.get('cachedMemberSnapshot');const data=stored.cachedMemberSnapshot;if(data?.accessState!=='approved'||!Array.isArray(data.members))return;data.members.sort((a,b)=>a.displayName.localeCompare(b.displayName,undefined,{sensitivity:'base'}));const cached=await storedImageCache();if(actionMode!=='notification')await markFreshNotes(data);latestData=data;latestImages=data.members.map(member=>cached[`${member.userId}:${member.imageVersion}`]||'');renderMembers()}
+function scheduleRefresh(delay=250){
   if(stopped)return;
   if(refreshTimer)clearTimeout(refreshTimer);
   refreshTimer=setTimeout(async()=>{await loadMembers();scheduleRefresh()},delay);
 }
-if(actionPopup){
-  overlayVisible=true;
-  presentationId=1;
-  document.documentElement.classList.add('action-popup');
-  if(actionMode==='role')pickerOpen=true;
-  if(actionMode==='note')noteOpen=true;
-  if(actionMode==='notification'){
-    standaloneNotification=true;
-    document.documentElement.classList.add('standalone-notification');
-  }
+overlayVisible=true;
+document.documentElement.classList.add('action-popup');
+if(actionMode==='role')pickerOpen=true;
+if(actionMode==='note')noteOpen=true;
+if(actionMode==='notification'){
+  standaloneNotification=true;
+  document.documentElement.classList.add('standalone-notification');
 }
+reportActionPopupVisibility();
 new ResizeObserver(scheduleSizeReport).observe(document.body);
 try{const started=chrome.runtime.sendMessage({type:'quadruzz-authenticated'});if(started?.catch)started.catch(()=>{})}catch{/* The background alarm will retry. */}
 void (async()=>{
-  if(actionPopup&&actionMode==='notification'){
+  if(actionMode==='notification'){
     const stored=await chrome.storage.session.get(['actionPopupNotification','activeNoteNotifications']);
     const active=Array.isArray(stored.activeNoteNotifications)?stored.activeNoteNotifications:[];
     for(const notification of active)addNotification(notification);
