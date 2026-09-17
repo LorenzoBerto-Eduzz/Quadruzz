@@ -194,11 +194,11 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
       const next = await prepareWorkspacePayload(localPayload);
       if (serverImageUrl) void decodeProfileImage(serverImageUrl);
       if (requestEpoch.current === epoch) setData(next);
-      if (payload.accessState === 'pending') window.postMessage({ type: 'quadruzz-access-requested' }, window.location.origin);
+      if (payload.accessState === 'pending' && extensionAuthorizeUrl) window.location.assign(extensionAuthorizeUrl);
       return true;
     } catch { setError(''); return false; }
     finally { if (requestEpoch.current === epoch) setBusy(false); }
-  }, []);
+  }, [extensionAuthorizeUrl]);
 
   const signOut = useCallback(async () => {
     setBusy(true);

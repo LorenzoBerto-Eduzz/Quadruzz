@@ -16,6 +16,9 @@ let latestImages=[];
 let pickerOpen=false;
 let noteOpen=false;
 let roleFilter='';
+let roleSelectionStart=null;
+let roleSelectionEnd=null;
+let roleComposing=false;
 let noteDraft='';
 let noteLastValid='';
 let savingRole=false;
@@ -188,9 +191,9 @@ function noteUsesTwoLines(value){
 function esc(value){const node=document.createElement('span');node.textContent=value??'';return node.innerHTML}
 function stopInvalidContext(error){if(!/extension context invalidated/i.test(String(error)))return false;stopped=true;if(refreshTimer)clearInterval(refreshTimer);return true}
 function matchingRoles(){const query=roleFilter.trim().toLocaleLowerCase();return (latestData?.roleStatuses||[]).filter(role=>!query||role.toLocaleLowerCase().includes(query))}
-function closeRolePicker(){pickerOpen=false;roleFilter='';renderMembers();reportActionPopupVisibility()}
+function closeRolePicker(){pickerOpen=false;roleFilter='';roleSelectionStart=null;roleSelectionEnd=null;roleComposing=false;renderMembers();reportActionPopupVisibility()}
 function closeNoteEditor(){noteOpen=false;noteDraft='';noteLastValid='';renderMembers();reportActionPopupVisibility()}
-function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}noteOpen=false;selectedRoleIndex=0;roleFilter='';pickerOpen=true;renderMembers();reportActionPopupVisibility()}
+function requestRolePickerToggle(){if(pickerOpen){closeRolePicker();return}noteOpen=false;selectedRoleIndex=0;roleFilter='';roleSelectionStart=0;roleSelectionEnd=0;roleComposing=false;pickerOpen=true;renderMembers();reportActionPopupVisibility()}
 function requestNoteToggle(){if(noteOpen){closeNoteEditor();return}pickerOpen=false;noteDraft='';noteLastValid='';noteOpen=true;renderMembers();reportActionPopupVisibility()}
 function viewSignature(){return JSON.stringify({members:latestData?.members,roles:latestData?.roleStatuses,images:latestImages,pendingRole,pendingNote,pendingNoteSet})}
 function rolePickerMarkup(){
@@ -212,6 +215,18 @@ function bindRolePicker(){
   };
   input.addEventListener('input',event=>{
     roleFilter=event.target.value;
+    roleSelectionStart=event.target.selectionStart;
+    roleSelectionEnd=event.target.selectionEnd;
+    selectedRoleIndex=matchingRoles().length?0:-1;
+    if(event.isComposing||roleComposing)return;
+    renderMembers();
+  });
+  input.addEventListener('compositionstart',()=>{roleComposing=true});
+  input.addEventListener('compositionend',event=>{
+    roleComposing=false;
+    roleFilter=event.target.value;
+    roleSelectionStart=event.target.selectionStart;
+    roleSelectionEnd=event.target.selectionEnd;
     selectedRoleIndex=matchingRoles().length?0:-1;
     renderMembers();
   });
@@ -244,7 +259,9 @@ function bindRolePicker(){
   });
   paintSelection();
   input.focus();
-  input.setSelectionRange(input.value.length,input.value.length);
+  const start=roleSelectionStart??input.value.length;
+  const end=roleSelectionEnd??start;
+  input.setSelectionRange(Math.min(start,input.value.length),Math.min(end,input.value.length));
 }
 function noteEditorMarkup(){return `<div class="note-editor"><textarea id="note-input" rows="2" aria-label="Set note" placeholder="Enviar comunicado..." spellcheck="true">${esc(noteDraft)}</textarea></div>`}
 function sizeNoteEditor(input){
@@ -403,6 +420,9 @@ async function chooseRole(value,create){
   pickerOpen=false;
   noteOpen=false;
   roleFilter='';
+  roleSelectionStart=null;
+  roleSelectionEnd=null;
+  roleComposing=false;
   renderMembers();
   try{
     const response=await api('/api/extension',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({actingState:label,createActingState:create})});
