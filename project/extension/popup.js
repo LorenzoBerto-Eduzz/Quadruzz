@@ -176,14 +176,14 @@ async function memberImage(member,token){const key=`${member.userId}:${member.im
 function formatNoteTime(value){const date=new Date(Number(value));if(Number.isNaN(date.getTime()))return'';const now=new Date();const pad=number=>String(number).padStart(2,'0');return date.toDateString()===now.toDateString()?pad(date.getHours())+':'+pad(date.getMinutes()):pad(date.getMonth()+1)+'/'+pad(date.getDate())}
 const noteMeasureContext=document.createElement('canvas').getContext('2d');
 function noteUsesTwoLines(value){
-  const note=String(value??'');
+  const note=String(value??'').replace(/\r\n?|[\u2028\u2029]/g,'\n').replace(/^\n+|\n+$/g,'');
   if(note.includes('\n'))return true;
   if(!noteMeasureContext)return false;
   noteMeasureContext.font='500 10px system-ui';
   let line='';
   for(const character of note){
     const candidate=line+character;
-    if(line&&noteMeasureContext.measureText(candidate).width>153)return true;
+    if(line&&noteMeasureContext.measureText(candidate).width>185)return true;
     line=candidate;
   }
   return false;
@@ -386,8 +386,8 @@ function renderMembers(){
     const top=layoutBottom(roleTrigger.closest('.member'))-1;
     picker.style.top=`${top}px`;
     const memberRect=roleTrigger.closest('.member').getBoundingClientRect();
-    picker.style.left=`${Math.round(memberRect.left+41)}px`;
-    picker.style.right=`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right))}px`;
+    picker.style.left=`${Math.round(memberRect.left+39)}px`;
+    picker.style.right=`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right-2))}px`;
     picker.style.width='auto';
     picker.style.maxHeight=`calc(100vh - ${top}px)`;
     pickerDesiredHeight=top+(matchingRoles().length+1)*24;
@@ -397,8 +397,8 @@ function renderMembers(){
     const top=layoutBottom(noteTrigger.closest('.member'))-1;
     editor.style.top=`${top}px`;
     const memberRect=noteTrigger.closest('.member').getBoundingClientRect();
-    editor.style.left=`${Math.round(memberRect.left+41)}px`;
-    editor.style.right=`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right))}px`;
+    editor.style.left=`${Math.round(memberRect.left+39)}px`;
+    editor.style.right=`${Math.max(0,Math.round(document.documentElement.clientWidth-memberRect.right-2))}px`;
     editor.style.width='auto';
     editor.dataset.top=String(top);
     pickerDesiredHeight=top+18;

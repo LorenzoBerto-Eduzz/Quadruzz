@@ -19,6 +19,7 @@ let cachedAccessAt = 0;
 let connectionOpening = null;
 let popupOperation = Promise.resolve();
 let offscreenCreating = null;
+let unreadActionIcon = null;
 
 function queuePopup(operation) { popupOperation = popupOperation.then(operation, operation); return popupOperation; }
 async function broadcast(type) { try { await chrome.runtime.sendMessage({ type }); } catch { /* No popup is listening. */ } }
@@ -45,10 +46,34 @@ async function sendOffscreenToken() {
   catch { /* The worker requests the token when it starts. */ }
 }
 
+async function unreadIconImageData() {
+  if (unreadActionIcon) return unreadActionIcon;
+  const image = await createImageBitmap(await (await fetch(chrome.runtime.getURL('icon.png'))).blob());
+  const sizes = [16, 32, 48, 128];
+  const icons = {};
+  for (const size of sizes) {
+    const canvas = new OffscreenCanvas(size, size);
+    const context = canvas.getContext('2d');
+    if (!context) continue;
+    context.drawImage(image, 0, 0, size, size);
+    const radius = Math.max(2, Math.round(size * 0.17));
+    const inset = Math.max(1, Math.round(size * 0.05));
+    context.fillStyle = '#1687ff';
+    context.beginPath();
+    context.arc(size - radius - inset, radius + inset, radius, 0, Math.PI * 2);
+    context.fill();
+    icons[size] = context.getImageData(0, 0, size, size);
+  }
+  unreadActionIcon = icons;
+  return icons;
+}
+
 async function setUnreadBadge(visible) {
-  await chrome.action.setBadgeBackgroundColor({ color: '#1687ff' });
-  if (chrome.action.setBadgeTextColor) await chrome.action.setBadgeTextColor({ color: '#ffffff' }).catch(() => {});
-  await chrome.action.setBadgeText({ text: visible ? '•' : '' });
+  await chrome.action.setBadgeText({ text: '' });
+  if (visible) {
+    try { await chrome.action.setIcon({ imageData: await unreadIconImageData() }); }
+    catch { await chrome.action.setIcon({ path: 'icon.png' }); }
+  } else await chrome.action.setIcon({ path: 'icon.png' });
   await chrome.action.setTitle({ title: visible ? 'Cross-Quadruzz — new note' : 'Toggle Cross-Quadruzz' });
 }
 
