@@ -1,6 +1,10 @@
 const worker = new Worker('sync-worker.js');
+let extensionVersion = null;
 
-function sendToken(token) { worker.postMessage({ type: 'quadruzz-token', token: token || null, extensionVersion: chrome.runtime.getManifest().version }); }
+function sendToken(token, version = extensionVersion) {
+  extensionVersion = version || extensionVersion;
+  worker.postMessage({ type: 'quadruzz-token', token: token || null, extensionVersion });
+}
 
 worker.addEventListener('message', (event) => {
   try {
@@ -10,9 +14,9 @@ worker.addEventListener('message', (event) => {
 });
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message?.type === 'quadruzz-offscreen-token') sendToken(message.token);
+  if (message?.type === 'quadruzz-offscreen-token') sendToken(message.token, message.extensionVersion);
 });
 
 void chrome.runtime.sendMessage({ type: 'quadruzz-offscreen-token-request' })
-  .then((response) => sendToken(response?.token))
+  .then((response) => sendToken(response?.token, response?.extensionVersion))
   .catch(() => sendToken(null));

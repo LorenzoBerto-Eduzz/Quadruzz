@@ -399,7 +399,7 @@ export function WorkspaceApp({ initialData, extensionAuthorizeUrl = null }: { in
         </dialog>
       )}
 
-      {!data.extensionEverSeen && !settingsOpen && (
+      {!data.installedExtensionVersion && !settingsOpen && (
         <aside className="extension-install-prompt" aria-label="Install Extension">
           <strong>Install Extension</strong>
           {CHROME_STORE_URL

@@ -41,7 +41,7 @@ async function ensureOffscreen() {
 
 async function sendOffscreenToken() {
   const { token = null } = await chrome.storage.local.get('token');
-  try { await chrome.runtime.sendMessage({ type: 'quadruzz-offscreen-token', token }); }
+  try { await chrome.runtime.sendMessage({ type: 'quadruzz-offscreen-token', token, extensionVersion: chrome.runtime.getManifest().version }); }
   catch { /* The worker requests the token when it starts. */ }
 }
 
@@ -408,7 +408,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'quadruzz-offscreen-token-request') {
-    void chrome.storage.local.get('token').then(({ token = null }) => sendResponse({ token }));
+    void chrome.storage.local.get('token').then(({ token = null }) => sendResponse({ token, extensionVersion: chrome.runtime.getManifest().version }));
     return true;
   }
   if (message?.type === 'quadruzz-open-hq') void chrome.tabs.create({ url: BASE, active: true });
